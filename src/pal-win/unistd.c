@@ -1,0 +1,116 @@
+#ifndef _unistd_c_INCLUDED
+#define _unistd_c_INCLUDED
+
+#define WIN32_LEAN_AND_MEAN
+
+#include <unistd.h>
+#include <windows.h>
+#include <stdio.h>
+#include <io.h>
+#include <stdlib.h>
+#include <process.h>
+#include <signal.h>
+#include <stdint.h>
+#include <assert.h>
+#include <wchar.h>
+#include <psapi.h>
+
+void pal_init()
+{
+    // Set output mode to handle virtual terminal sequences
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE)
+    {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode))
+        {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+}
+
+//taken from https://stackoverflow.com/a/26085827/742404
+int gettimeofday(struct timeval* tp, struct timezone* tzp)
+{
+    // Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
+    // This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
+    // until 00:00:00 January 1, 1970 
+    static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+
+    SYSTEMTIME  system_time;
+    FILETIME    file_time;
+    uint64_t    time;
+
+    GetSystemTime(&system_time);
+    SystemTimeToFileTime(&system_time, &file_time);
+    time = ((uint64_t)file_time.dwLowDateTime);
+    time += ((uint64_t)file_time.dwHighDateTime) << 32;
+
+    tp->tv_sec = (long)((time - EPOCH) / 10000000L);
+    tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
+    return 0;
+}
+
+int getrusage(int who, struct rusage* usage)
+{
+    assert(who == RUSAGE_SELF);
+
+    FILETIME createTime;
+    FILETIME exitTime;
+    FILETIME kernelTime;
+    FILETIME userTime;
+
+    if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &kernelTime, &userTime) == -1)
+        return -1;
+
+    SYSTEMTIME userSystemTime;
+    if (FileTimeToSystemTime(&userTime, &userSystemTime) == -1)
+        return -1;
+
+    SYSTEMTIME kernelSystemTime;
+    if (FileTimeToSystemTime(&kernelTime, &kernelSystemTime) == -1)
+        return -1;
+
+    usage->ru_utime.tv_sec = userSystemTime.wHour*3600+
+        userSystemTime.wMinute*60+
+        userSystemTime.wSecond;
+    usage->ru_utime.tv_usec = userSystemTime.wMilliseconds * 1000;
+
+    usage->ru_stime.tv_sec = kernelSystemTime.wHour * 3600 +
+        kernelSystemTime.wMinute * 60 +
+        kernelSystemTime.wSecond;
+    usage->ru_stime.tv_usec = kernelSystemTime.wMilliseconds * 1000;
+
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+        usage->ru_maxrss = pmc.PeakWorkingSetSize/1024;
+
+    return 0;
+}
+
+long sysconf(int name)
+{
+    assert(name == _SC_PAGESIZE);
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwPageSize;
+}
+
+unsigned int alarm(unsigned int seconds)
+{
+    //http://man7.org/linux/man-pages/man2/alarm.2.html
+    /*
+           alarm() arranges for a SIGALRM signal to be delivered to the calling
+       process in seconds seconds.
+
+       If seconds is zero, any pending alarm is canceled.
+
+       In any event any previously set alarm() is canceled.
+    */
+
+    return 0;
+}
+
+#endif
