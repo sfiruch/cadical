@@ -287,11 +287,12 @@ struct vivify_flush_smaller {
   bool operator () (Clause * a, Clause * b) const {
 
     const auto eoa = a->end (), eob = b->end ();
+    auto i = a->begin ();
     auto j = b->begin ();
-    for (auto i = a->begin (); i != eoa && j != eob; i++, j++)
+    for (; i != eoa && j != eob; i++, j++)
       if (*i != *j) return *i < *j;
 
-    return j == eob;
+    return i != eoa && j == eob;
   }
 };
 
