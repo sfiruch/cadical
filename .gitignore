@@ -1,2 +1,4 @@
 build
 makefile
+/.vs
+/x64
