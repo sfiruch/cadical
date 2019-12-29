@@ -584,6 +584,9 @@ void App::catch_alarm () {
 } // end of 'namespace CaDiCaL'
 
 int main (int argc, char ** argv) {
-  CaDiCaL::App app;
+#ifdef USE_PAL
+    pal_init();
+#endif
+    CaDiCaL::App app;
   return app.main (argc, argv);
 }

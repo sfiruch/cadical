@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <vector>
 
+extern "C" {
+#include <unistd.h>
+}
+
 namespace CaDiCaL {
 
 /*========================================================================*/
