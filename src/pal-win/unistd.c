@@ -15,6 +15,9 @@
 #include <wchar.h>
 #include <psapi.h>
 
+static HANDLE hTimer = NULL;
+static HANDLE hTimerQueue = NULL;
+
 void pal_init()
 {
     // Set output mode to handle virtual terminal sequences
@@ -28,6 +31,10 @@ void pal_init()
             SetConsoleMode(hOut, dwMode);
         }
     }
+
+    hTimerQueue = CreateTimerQueue();
+    assert(hTimerQueue != NULL);
+
 }
 
 //taken from https://stackoverflow.com/a/26085827/742404
@@ -98,17 +105,40 @@ long sysconf(int name)
     return si.dwPageSize;
 }
 
+#undef signal
+
+static _crt_signal_t alarmHandler = NULL;
+
+_crt_signal_t pal_signal(int sig, _crt_signal_t func)
+{
+    if (sig == SIGALRM)
+    {
+        _crt_signal_t old = alarmHandler;
+        alarmHandler = func;
+        return old;
+    }
+
+    return signal(sig, func);
+}
+
+static VOID CALLBACK TimerCallback(PVOID lpParam, BOOLEAN TimerOrWaitFired)
+{
+    _crt_signal_t h = alarmHandler;
+    if (h)
+        h(SIGALRM);
+}
+
 unsigned int alarm(unsigned int seconds)
 {
-    //http://man7.org/linux/man-pages/man2/alarm.2.html
-    /*
-           alarm() arranges for a SIGALRM signal to be delivered to the calling
-       process in seconds seconds.
+    if (hTimer)
+    {
+        BOOL res = DeleteTimerQueueTimer(hTimerQueue, hTimer, NULL);
+        assert(res);
+        hTimer = NULL;
+    }
 
-       If seconds is zero, any pending alarm is canceled.
-
-       In any event any previously set alarm() is canceled.
-    */
+    if (!CreateTimerQueueTimer(&hTimer, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback, NULL, (DWORD)seconds * (DWORD)1000, 0, 0))
+        assert(0);
 
     return 0;
 }
