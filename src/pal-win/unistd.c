@@ -91,7 +91,11 @@ int getrusage(int who, struct rusage* usage)
 
     PROCESS_MEMORY_COUNTERS pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
-        usage->ru_maxrss = pmc.PeakWorkingSetSize/1024;
+    {
+        usage->ru_maxrss = pmc.PeakWorkingSetSize / 1024;
+        usage->ru_idrss = pmc.WorkingSetSize / 1024;
+        usage->ru_ixrss = 0;
+    }
 
     return 0;
 }

@@ -65,7 +65,13 @@ size_t current_resident_set_size () {
   char path[40];
   sprintf (path, "/proc/%" PRId64 "/statm", (int64_t) getpid ());
   FILE * file = fopen (path, "r");
-  if (!file) return 0;
+  if (!file)
+  {
+      // Fall back to rusage, if the '/proc' file system is not found
+      struct rusage u;
+      if (getrusage(RUSAGE_SELF, &u)) return 0;
+      return ((size_t) u.ru_idrss + (size_t) u.ru_ixrss) << 10;
+  }
   int64_t dummy, rss;
   int scanned = fscanf (file, "%" PRId64 " %" PRId64 "", &dummy, &rss);
   fclose (file);
