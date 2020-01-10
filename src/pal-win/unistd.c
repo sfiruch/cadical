@@ -71,8 +71,8 @@ int getrusage(int who, struct rusage* usage)
     if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &kernelTime, &userTime) == -1)
         return -1;
 
-    uint64_t userT64=(userTime.dwHighDateTime << 32) | userTime.dwLowDateTime;
-    uint64_t kernelT64 = (kernelTime.dwHighDateTime << 32) | kernelTime.dwLowDateTime;
+    uint64_t userT64=((uint64_t)userTime.dwHighDateTime << 32) | userTime.dwLowDateTime;
+    uint64_t kernelT64 = ((uint64_t)kernelTime.dwHighDateTime << 32) | kernelTime.dwLowDateTime;
 
     usage->ru_utime.tv_sec = userT64 / 10 / 1000 / 1000;
     usage->ru_utime.tv_usec = (userT64 / 10) % (1000*1000);
