@@ -71,23 +71,14 @@ int getrusage(int who, struct rusage* usage)
     if (GetProcessTimes(GetCurrentProcess(), &createTime, &exitTime, &kernelTime, &userTime) == -1)
         return -1;
 
-    SYSTEMTIME userSystemTime;
-    if (FileTimeToSystemTime(&userTime, &userSystemTime) == -1)
-        return -1;
+    uint64_t userT64=(userTime.dwHighDateTime << 32) | userTime.dwLowDateTime;
+    uint64_t kernelT64 = (kernelTime.dwHighDateTime << 32) | kernelTime.dwLowDateTime;
 
-    SYSTEMTIME kernelSystemTime;
-    if (FileTimeToSystemTime(&kernelTime, &kernelSystemTime) == -1)
-        return -1;
+    usage->ru_utime.tv_sec = userT64 / 10 / 1000 / 1000;
+    usage->ru_utime.tv_usec = (userT64 / 10) % (1000*1000);
 
-    usage->ru_utime.tv_sec = userSystemTime.wHour*3600+
-        userSystemTime.wMinute*60+
-        userSystemTime.wSecond;
-    usage->ru_utime.tv_usec = userSystemTime.wMilliseconds * 1000;
-
-    usage->ru_stime.tv_sec = kernelSystemTime.wHour * 3600 +
-        kernelSystemTime.wMinute * 60 +
-        kernelSystemTime.wSecond;
-    usage->ru_stime.tv_usec = kernelSystemTime.wMilliseconds * 1000;
+    usage->ru_stime.tv_sec = kernelT64 / 10 / 1000 / 1000;
+    usage->ru_stime.tv_usec = (kernelT64 / 10) % (1000 * 1000);
 
     PROCESS_MEMORY_COUNTERS pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
