@@ -18,10 +18,8 @@
 // the file '../VERSION' with '../scripts/update-version.sh'.  The standard
 // build process relies on 'VERSION' to be defined in 'build.hpp'.
 
-#ifndef NBUILD
 #ifndef VERSION
 #  define VERSION "1.3.0"
-#endif // NBUILD
 #endif // VERSION
 
 /*------------------------------------------------------------------------*/

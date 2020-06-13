@@ -93,7 +93,8 @@ int number_of_cores (Internal * internal)
   (void) internal;
 #endif
 
-  bool amd, intel, res;
+  bool amd, intel;
+  int res;
 
   const int syscores = sysconf (_SC_NPROCESSORS_ONLN);
   if (syscores > 0) MSG ("'sysconf' reports %d processors", syscores);

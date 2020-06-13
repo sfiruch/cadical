@@ -100,7 +100,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;NO_STRICT;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -116,7 +116,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;NDEBUG;NO_STRICT;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -133,7 +133,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Library|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NUNLOCKED;NBUILD;WIN32;NDEBUG;_CONSOLE;NO_STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -151,14 +151,14 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_PAL;NUNLOCKED;NBUILD;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_PAL;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -173,7 +173,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Library|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -202,6 +202,7 @@
     <ClCompile Include="src\compact.cpp" />
     <ClCompile Include="src\condition.cpp" />
     <ClCompile Include="src\config.cpp" />
+    <ClCompile Include="src\contract.cpp" />
     <ClCompile Include="src\cover.cpp" />
     <ClCompile Include="src\decide.cpp" />
     <ClCompile Include="src\decompose.cpp" />
@@ -219,6 +220,7 @@
     <ClCompile Include="src\ipasir.cpp" />
     <ClCompile Include="src\limit.cpp" />
     <ClCompile Include="src\logging.cpp" />
+    <ClCompile Include="src\lookahead.cpp" />
     <ClCompile Include="src\lucky.cpp" />
     <ClCompile Include="src\message.cpp" />
     <ClCompile Include="src\minimize.cpp" />
@@ -297,6 +299,7 @@
     <ClInclude Include="src\queue.hpp" />
     <ClInclude Include="src\radix.hpp" />
     <ClInclude Include="src\random.hpp" />
+    <ClInclude Include="src\range.hpp" />
     <ClInclude Include="src\reluctant.hpp" />
     <ClInclude Include="src\resources.hpp" />
     <ClInclude Include="src\score.hpp" />

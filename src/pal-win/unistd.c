@@ -93,11 +93,19 @@ int getrusage(int who, struct rusage* usage)
 
 long sysconf(int name)
 {
-    assert(name == _SC_PAGESIZE);
-
     SYSTEM_INFO si;
     GetSystemInfo(&si);
-    return si.dwPageSize;
+
+    switch (name)
+    {
+    case _SC_PAGESIZE:
+        return si.dwPageSize;
+    case _SC_NPROCESSORS_ONLN:
+        return si.dwNumberOfProcessors;
+    default:
+        assert(false);
+        return 0;
+    }
 }
 
 #undef signal

@@ -54,6 +54,7 @@ int getrusage(int who, struct rusage* usage);
 
 
 #define _SC_PAGESIZE 1338
+#define _SC_NPROCESSORS_ONLN 1339
 long sysconf(int name);
 
 #undef min

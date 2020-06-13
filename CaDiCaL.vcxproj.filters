@@ -225,6 +225,12 @@
     <ClCompile Include="src\external.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\contract.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lookahead.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ccadical.h">
@@ -382,6 +388,9 @@
     </ClInclude>
     <ClInclude Include="src\pal-win\sys\mman.h">
       <Filter>Windows PAL</Filter>
+    </ClInclude>
+    <ClInclude Include="src\range.hpp">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
