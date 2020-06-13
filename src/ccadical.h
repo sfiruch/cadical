@@ -30,6 +30,9 @@ DllExport int ccadical_failed (CCaDiCaL *, int lit);
 DllExport void ccadical_set_terminate (CCaDiCaL *,
   void * state, int (*terminate)(void * state));
 
+void ccadical_set_learn (CCaDiCaL *,
+  void * state, int max_length, void (*learn)(void * state, int * clause));
+
 /*------------------------------------------------------------------------*/
 
 // Non-IPASIR conformant 'C' functions.
