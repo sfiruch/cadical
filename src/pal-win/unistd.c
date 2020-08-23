@@ -103,7 +103,7 @@ long sysconf(int name)
     case _SC_NPROCESSORS_ONLN:
         return si.dwNumberOfProcessors;
     default:
-        assert(false);
+        assert(FALSE);
         return 0;
     }
 }
