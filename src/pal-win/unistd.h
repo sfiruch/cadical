@@ -2,6 +2,7 @@
 #define _unistd_h_INCLUDED
 
 #define WIN32_LEAN_AND_MEAN
+#define __WIN32
 
 #include <Windows.h>
 #include <stdio.h>
@@ -9,10 +10,15 @@
 #include <stdlib.h>
 #include <process.h>
 #include <signal.h>
+#include <immintrin.h>
 
 #define __PRETTY_FUNCTION__ __FUNCSIG__
 #define __builtin_prefetch(x, rw, level) PreFetchCacheLine(level, x)
 #define _CRT_NONSTDC_NO_WARNINGS
+
+#define __builtin_clz _lzcnt_u32
+#define __builtin_clzl _lzcnt_u32
+#define __builtin_clzll _lzcnt_u64
 
 #define popen _popen
 #define pclose _pclose

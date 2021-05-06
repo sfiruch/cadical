@@ -231,6 +231,12 @@
     <ClCompile Include="src\lookahead.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\reap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\shrink.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ccadical.h">
@@ -390,6 +396,9 @@
       <Filter>Windows PAL</Filter>
     </ClInclude>
     <ClInclude Include="src\range.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\reap.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

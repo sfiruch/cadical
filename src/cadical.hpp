@@ -775,8 +775,7 @@ private:
   // Apparently (on 'gcc 9' at least) the first argument is 'this' here.
   // TODO: support for other compilers (beside 'gcc' and 'clang').
   //
-# define CADICAL_ATTRIBUTE_FORMAT(FORMAT_POSITION,VARIADIC_ARGUMENT_POSITION) \
-    __attribute__ ((format (printf, FORMAT_POSITION, VARIADIC_ARGUMENT_POSITION)))
+# define CADICAL_ATTRIBUTE_FORMAT(FORMAT_POSITION,VARIADIC_ARGUMENT_POSITION) 
 
   // Messages in a common style.
   //
