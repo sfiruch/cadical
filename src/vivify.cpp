@@ -630,6 +630,7 @@ void Internal::vivify_clause (Vivifier & vivifier, Clause * c) {
     int l = 1;        // This is the decision level we want to reuse.
 
     for (const auto & lit : sorted) {
+      if (!level) break;
       if (fixed (lit)) continue;
       const int decision = control[l].decision;
       if (-lit == decision) {
@@ -995,7 +996,7 @@ void Internal::vivify_round (bool redundant_mode, int64_t propagation_limit) {
     if (still_need_to_be_vivified)
       PHASE ("vivify", stats.vivifications,
         "still need to vivify %" PRId64 " clauses %.02f%% of %" PRId64
-	" scheduled", still_need_to_be_vivified,
+        " scheduled", still_need_to_be_vivified,
         percent (still_need_to_be_vivified, scheduled),
         scheduled);
     else {

@@ -307,7 +307,7 @@ public:
     std::vector<std::vector<int>> cubes;
   };
 
-  CubesWithStatus generate_cubes(int);
+  CubesWithStatus generate_cubes(int, int min_depth = 0);
 
   void reset_assumptions();
 
@@ -655,7 +655,7 @@ public:
 
   const char * read_dimacs (FILE * file,
                             const char * name, int & vars, int strict,
-			    bool & incremental, std::vector<int> & cubes);
+                            bool & incremental, std::vector<int> & cubes);
 
   const char * read_dimacs (const char * path, int & vars, int strict,
                             bool & incremental, std::vector<int> & cubes);
@@ -771,22 +771,33 @@ private:
   //
   const char * read_solution (const char * path);
 
+  // This gives warning messages for wrong 'printf' style format string usage.
+  // Apparently (on 'gcc 9' at least) the first argument is 'this' here.
+  // TODO: support for other compilers (beside 'gcc' and 'clang').
+  //
+# define CADICAL_ATTRIBUTE_FORMAT(FORMAT_POSITION,VARIADIC_ARGUMENT_POSITION) \
+    __attribute__ ((format (printf, FORMAT_POSITION, VARIADIC_ARGUMENT_POSITION)))
+
   // Messages in a common style.
   //
   //   require (VALID | DELETING)
   //   ensure (VALID | DELETING)
   //
   void section (const char *);          // print section header
-  void message (const char *, ...);     // ordinary message
+  void message (const char *, ...)      // ordinary message
+                CADICAL_ATTRIBUTE_FORMAT (2, 3);
+
   void message ();                      // empty line - only prefix
-  void error (const char *, ...);       // produce error message
+  void error (const char *, ...)        // produce error message
+              CADICAL_ATTRIBUTE_FORMAT (2, 3);
 
   // Explicit verbose level ('section' and 'message' use '0').
   //
   //   require (VALID | DELETING)
   //   ensure (VALID | DELETING)
   //
-  void verbose (int level, const char *, ...);
+  void verbose (int level, const char *, ...)
+                           CADICAL_ATTRIBUTE_FORMAT (3, 4);
 
   // Factoring out common code to both 'read_dimacs' functions above.
   //
@@ -795,7 +806,7 @@ private:
   //
   const char * read_dimacs (File *, int &, int strict,
                             bool * incremental = 0,
-			    std::vector<int> * = 0);
+                            std::vector<int> * = 0);
 
   // Factored out common code for 'solve', 'simplify' and 'lookahead'.
   //
@@ -837,8 +848,6 @@ public:
   virtual bool learning (int size) = 0;
   virtual void learn (int lit) = 0;
 };
-
-/*------------------------------------------------------------------------*/
 
 /*------------------------------------------------------------------------*/
 
