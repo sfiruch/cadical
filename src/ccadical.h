@@ -37,6 +37,8 @@ void ccadical_set_learn (CCaDiCaL *,
 
 // Non-IPASIR conformant 'C' functions.
 
+DllExport void ccadical_constrain (CCaDiCaL *, int lit);
+DllExport int ccadical_constraint_failed (CCaDiCaL *);
 DllExport void ccadical_set_option (CCaDiCaL *, const char * name, int val);
 DllExport void ccadical_limit (CCaDiCaL *, const char * name, int limit);
 DllExport int ccadical_get_option (CCaDiCaL *, const char * name);
