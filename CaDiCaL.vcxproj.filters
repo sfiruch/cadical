@@ -237,6 +237,9 @@
     <ClCompile Include="src\shrink.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\constrain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ccadical.h">
@@ -399,6 +402,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\reap.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\inttypes.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
