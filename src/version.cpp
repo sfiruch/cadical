@@ -24,7 +24,7 @@
 
 #ifdef NBUILD
 #ifndef VERSION
-#  define VERSION "sc2021"
+#  define VERSION "1.5.2"
 #endif // NBUILD
 #endif // VERSION
 
