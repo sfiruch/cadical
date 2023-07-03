@@ -21,9 +21,9 @@ namespace CaDiCaL {
 //
 // This old method is better than the initializations described in our
 // [BiereFroehlich-POS'15] paper and actually faster than the ADAM method,
-// but less precise.  This old method, which we consider obsolete but it
-// could still be useful for implementations relying on integers instead of
-// floating points thus only needs shifts and integer arithmetic.
+// but less precise.  We consider this old method obsolete now but it
+// could still be useful for implementations relying on integers instead
+// of floating points because it only needs shifts and integer arithmetic.
 //
 // Our new method for unbiased initialization of the exponential averages
 // works as follows.  First the biased moving average is computed as usual.
@@ -53,7 +53,7 @@ namespace CaDiCaL {
 // 'value' in our 'code').  In order to avoid computing 'pow' every time, we
 // use 'exp' which is multiplied in every update with 'beta'.
 
-void EMA::update (Internal * internal, double y, const char * name) {
+void EMA::update (Internal *internal, double y, const char *name) {
 #ifdef LOGGING
   updated++;
   const double old_value = value;
@@ -84,7 +84,7 @@ void EMA::update (Internal * internal, double y, const char * name) {
   }
   value = new_value;
   LOG ("update %" PRIu64 " of corrected %s EMA %g with %g (delta %g) "
-       "yields %g (exponent %g, divisor %g)" ,
+       "yields %g (exponent %g, divisor %g)",
        updated, name, old_value, y, delta, new_value, new_exp, div);
 #ifndef LOGGING
   (void) internal;
@@ -92,4 +92,4 @@ void EMA::update (Internal * internal, double y, const char * name) {
 #endif
 }
 
-}
+} // namespace CaDiCaL

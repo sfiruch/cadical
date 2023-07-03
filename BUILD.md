@@ -91,14 +91,25 @@ point).
 
 There are two steps necessary to make this work.  First make
 sure to be able to execute binaries compiled with the cross-compiler
-directly.  For instance in order to use `wine` to execute the binaries
-on Linux you might want to look into the `binfmt_misc` module and
-registering the appropriate interpreter for `DOSWin`. As second step
-you simply tell the `configure` script to use the cross-compiler.
+directly.  Otherwise 'configure' does not work automatically and you
+have to build manually (as described above).
 
-    CXXFLAGS=-static CXX=i686-w64-mingw32-g++ ./configure
+For instance in order to use `wine` to execute the binaries first install
+`wine` which for instance on Ubuntu just requires
+
+    sudo apt install wine
+
+Then on Linux you might want to look into the `binfmt_misc` module and
+as root register the appropriate interpreter for `DOSWin`.
+
+    cd /proc/sys/fs/binfmt_misc
+    echo ':DOSWin:M::MZ::/usr/bin/wine:' > register
+
+Finally simply tell the `configure` script to use the cross-compiler.
+
+    CXX=i686-w64-mingw32-g++ ./configure -static -lpsapi && make cadical
 
 Note the use of '-static', which was necessary for me since by default
-`wine` did not find `libstdc++` if dynamically linked.
-
-
+`wine` did not find `libstdc++` if dynamically linked.  There is also
+a dependency on the 'psapi' library. Also `mobical` does not compile with
+MinGW32 due to too many Unix dependencies and thus only make 'cadical'.

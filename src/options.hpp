@@ -15,6 +15,8 @@
 // of '2' uses base '10'.  The 'P' column determines simplification
 // options (disabled with '--plain') and 'R' which values can be reset.
 
+// clang-format off
+
 #define OPTIONS \
 \
 /*      NAME         DEFAULT, LO, HI,O,P,R, USAGE */ \
@@ -33,9 +35,11 @@ OPTION( bumpreason,        1,  0,  1,0,0,1, "bump reason literals too") \
 OPTION( bumpreasondepth,   1,  1,  3,0,0,1, "bump reason depth") \
 OPTION( check,             0,  0,  1,0,0,0, "enable internal checking") \
 OPTION( checkassumptions,  1,  0,  1,0,0,0, "check assumptions satisfied") \
+OPTION( checkconstraint,   1,  0,  1,0,0,0, "check constraint satisfied") \
 OPTION( checkfailed,       1,  0,  1,0,0,0, "check failed literals form core") \
 OPTION( checkfrozen,       0,  0,  1,0,0,0, "check all frozen semantics") \
 OPTION( checkproof,        1,  0,  1,0,0,0, "check proof internally") \
+OPTION( checkprooflrat,    1,  0,  1,0,0,0, "use internal LRAT proof checker") \
 OPTION( checkwitness,      1,  0,  1,0,0,0, "check witness internally") \
 OPTION( chrono,            1,  0,  2,0,0,1, "chronological backtracking") \
 OPTION( chronoalways,      0,  0,  1,0,0,1, "force always chronological") \
@@ -100,9 +104,13 @@ OPTION( instantiateocclim, 1,  1,2e9,2,0,1, "maximum occurrence limit") \
 OPTION( instantiateonce,   1,  0,  1,0,0,1, "instantiate each clause once") \
 LOGOPT( log,               0,  0,  1,0,0,0, "enable logging") \
 LOGOPT( logsort,           0,  0,  1,0,0,0, "sort logged clauses") \
+OPTION( lrat,              0,  0,  1,0,0,1, "use lrat proof format") \
+OPTION( lratexternal,      0,  0,  1,0,0,1, "external lrat") \
+OPTION( lratfrat,          0,  0,  1,0,0,1, "use frat proof format") \
 OPTION( lucky,             1,  0,  1,0,0,1, "search for lucky phases") \
 OPTION( minimize,          1,  0,  1,0,0,1, "minimize learned clauses") \
 OPTION( minimizedepth,   1e3,  0,1e3,0,0,1, "minimization depth") \
+OPTION( otfs,              1,  0,  1,0,0,1, "on-the-fly self subsumption") \
 OPTION( phase,             1,  0,  1,0,0,1, "initial phase") \
 OPTION( probe,             1,  0,  1,0,1,1, "failed literal probing" ) \
 OPTION( probehbr,          1,  0,  1,0,0,1, "learn hyper binary clauses") \
@@ -148,6 +156,7 @@ OPTION( stabilizefactor, 200,101,2e9,0,0,1, "phase increase in percent") \
 OPTION( stabilizeint,    1e3,  1,2e9,0,0,1, "stabilizing interval") \
 OPTION( stabilizemaxint, 2e9,  1,2e9,0,0,1, "maximum stabilizing phase") \
 OPTION( stabilizeonly,     0,  0,  1,0,0,1, "only stabilizing phases") \
+OPTION( stats,             1,  0,  1,0,0,1, "print all statistics at the end of the run") \
 OPTION( subsume,           1,  0,  1,0,1,1, "enable clause subsumption") \
 OPTION( subsumebinlim,   1e4,  0,2e9,1,0,1, "watch list length limit") \
 OPTION( subsumeclslim,   1e2,  0,2e9,2,0,1, "clause length limit") \
@@ -173,6 +182,7 @@ OPTION( transredmineff,  1e6,  0,2e9,1,0,1, "minimum efficiency") \
 OPTION( transredreleff,  1e2,  1,1e5,1,0,1, "relative efficiency per mille") \
 QUTOPT( verbose,           0,  0,  3,0,0,0, "more verbose messages") \
 OPTION( vivify,            1,  0,  1,0,1,1, "vivification") \
+OPTION( vivifyinst,        1,  0,  1,0,0,1, "instantiate last literal when vivify") \
 OPTION( vivifymaxeff,    2e7,  0,2e9,1,0,1, "maximum efficiency") \
 OPTION( vivifymineff,    2e4,  0,2e9,1,0,1, "minimum efficiency") \
 OPTION( vivifyonce,        0,  0,  2,0,0,1, "vivify once: 1=red, 2=red+irr") \
@@ -187,6 +197,8 @@ OPTION( walkreleff,       20,  1,1e5,1,0,1, "relative efficiency per mille") \
 
 // Note, keep an empty line right before this line because of the last '\'!
 // Also keep those single spaces after 'OPTION(' for proper sorting.
+
+// clang-format on
 
 /*------------------------------------------------------------------------*/
 
@@ -218,12 +230,12 @@ struct Internal;
 class Options;
 
 struct Option {
-  const char * name;
+  const char *name;
   int def, lo, hi;
   int optimizable;
   bool preprocessing;
-  const char * description;
-  int & val (Options *);
+  const char *description;
+  int &val (Options *);
 };
 
 /*------------------------------------------------------------------------*/
@@ -231,24 +243,24 @@ struct Option {
 // Produce a compile time constant for the number of options.
 
 static const size_t number_of_options =
-#define OPTION(N,V,L,H,O,P,R,D) 1 +
-OPTIONS
+#define OPTION(N, V, L, H, O, P, R, D) 1 +
+    OPTIONS
 #undef OPTION
-+ 0;
+    + 0;
 
 /*------------------------------------------------------------------------*/
 
 class Options {
 
-  Internal * internal;
+  Internal *internal;
 
   void set (Option *, int val); // Force to [lo,hi] interval.
 
   friend struct Option;
   static Option table[];
 
-  static void initialize_from_environment (
-    int & val, const char * name, const int L, const int H);
+  static void initialize_from_environment (int &val, const char *name,
+                                           const int L, const int H);
 
   friend Config;
 
@@ -256,7 +268,6 @@ class Options {
   void disable_preprocessing ();
 
 public:
-
   // For library usage we disable reporting by default while for the stand
   // alone SAT solver we enable it by default.  This default value has to
   // be set before the constructor of 'Options' is called (which in turn is
@@ -274,12 +285,12 @@ public:
   // internally in the solver and thus can also be used in tight loops.
   //
 private:
-  int __start_of_options__;             // Used by 'val' below.
+  int __start_of_options__; // Used by 'val' below.
 public:
-# define OPTION(N,V,L,H,O,P,R,D) \
-  int N;                                // Access option values by name.
+#define OPTION(N, V, L, H, O, P, R, D) \
+  int N; // Access option values by name.
   OPTIONS
-# undef OPTION
+#undef OPTION
 
   // It would be more elegant to use an anonymous 'struct' of the actual
   // option values overlayed with an 'int values[number_of_options]' array
@@ -287,7 +298,7 @@ public:
   // the following construction which relies on '__start_of_options__' and
   // that the following options are really allocated directly after it.
   //
-  inline int & val (size_t idx) {
+  inline int &val (size_t idx) {
     assert (idx < number_of_options);
     return (&__start_of_options__ + 1)[idx];
   }
@@ -301,17 +312,17 @@ public:
   // 'Option' or to have even faster access directly by the member function
   // (the 'N' above, e.g., 'restart').
   //
-  static Option * has (const char * name);
+  static Option *has (const char *name);
 
-  bool set (const char * name, int);    // Explicit version.
-  int  get (const char * name);         // Get current value.
+  bool set (const char *name, int); // Explicit version.
+  int get (const char *name);       // Get current value.
 
-  void print ();             // Print current values in command line form
-  static void usage ();      // Print usage message for all options.
+  void print ();        // Print current values in command line form
+  static void usage (); // Print usage message for all options.
 
-  void optimize (int val);   // increase some limits (val=0..31)
+  void optimize (int val); // increase some limits (val=0..31)
 
-  static bool is_preprocessing_option (const char * name);
+  static bool is_preprocessing_option (const char *name);
 
   // Parse long option argument
   //
@@ -327,20 +338,21 @@ public:
 
   // Iterating options.
 
-  typedef Option * iterator;
-  typedef const Option * const_iterator;
+  typedef Option *iterator;
+  typedef const Option *const_iterator;
 
   static iterator begin () { return table; }
   static iterator end () { return table + number_of_options; }
 
-  void copy (Options & other) const;    // Copy 'this' into 'other'.
+  void copy (Options &other) const; // Copy 'this' into 'other'.
 };
 
-inline int & Option::val (Options * opts) {
-  assert (Options::table <= this && this < Options::table + number_of_options);
+inline int &Option::val (Options *opts) {
+  assert (Options::table <= this &&
+          this < Options::table + number_of_options);
   return opts->val (this - Options::table);
 }
 
-}
+} // namespace CaDiCaL
 
 #endif

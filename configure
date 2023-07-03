@@ -16,6 +16,7 @@ rm -f configure.log
 
 all=no
 debug=no
+libs=""
 logging=no
 check=no
 competition=no
@@ -140,6 +141,8 @@ do
     -c|--check) check=yes;;
     -l|--log|--logging) logging=yes;;
 
+    -l*) libs="$libs $1";;
+
     -p|--pedantic) pedantic=yes;;
     -q|--quiet) quiet=yes;;
 
@@ -237,6 +240,17 @@ msg "root directory '$root'"
 
 #--------------------------------------------------------------------------#
 
+src="$root/src"
+
+if [ -d "$src" ]
+then
+  msg "source directory '$src'"
+else
+  die "could not find source director '$src'"
+fi
+
+#--------------------------------------------------------------------------#
+
 # Prepare '@CXX@' and '@CXXFLAGS@' parameters for 'makefile.in'
 
 [ x"$CXX" = x ] && CXX=g++
@@ -252,7 +266,7 @@ then
   CXXFLAGS="$CXXFLAGS -g"
 else
   case x"$CXX" in
-    xg++*|xclang++*) CXXFLAGS="$CXXFLAGS -O3";;
+    x*g++*|x*clang++*) CXXFLAGS="$CXXFLAGS -O3";;
     *) CXXFLAGS="$CXXFLAGS -O";;
   esac
 fi
@@ -260,7 +274,7 @@ fi
 if [ $m32 = yes ]
 then
   case x"$CXX" in
-    xg++*)
+    x*g++*)
       options="$options -mpc64"
       msg "forcing portable 64-bit FPU mode ('-mpc64') for '$CXX'"
       ;;
@@ -283,7 +297,7 @@ if [ $pedantic = yes ]
 then
   CXXFLAGS="$CXXFLAGS --pedantic -Werror -std=c++11"
   case x"$CXX" in
-    xg++*|xclang++*) CXXFLAGS="${CXXFLAGS} -Wp,-D_GLIBCXX_ASSERTIONS"
+    x*g++*|x*clang++*) CXXFLAGS="${CXXFLAGS} -Wp,-D_GLIBCXX_ASSERTIONS"
     ;;
   esac
 fi
@@ -295,7 +309,7 @@ CXXFLAGS="$CXXFLAGS$options"
 #--------------------------------------------------------------------------#
 
 case x"$CXX" in
-  xg++* | xclang++*) WERROR="-Werror -pedantic";;
+  x*g++* | x*clang++*) WERROR="-Werror -pedantic";;
   *) WERROR="";;
 esac
 
@@ -348,7 +362,6 @@ unsigned f (const std::vector<unsigned> & a) {
   for (auto i : a) res += i;
   return res;
 }
-
 
 int main () { MACRO ("%d", 42); return 0; }
 EOF
@@ -428,6 +441,7 @@ sed \
 # This 'makefile' is generated from '../makefile.in'." \
 -e "s,@CXX@,$CXX," \
 -e "s#@CXXFLAGS@#$CXXFLAGS#" \
+-e "s#@LIBS@#$libs#" \
 ../makefile.in > makefile
 
 msg "generated '$build/makefile' from '../makefile.in'"
@@ -450,6 +464,7 @@ clean:
 	  fi; \\
 	  rm -rf "\$(CADICALBUILD)"; \\
 	fi
+	rm -f "$src/makefile"
 	rm -f "$makefile"
 test:
 	\$(MAKE) -C "\$(CADICALBUILD)" test
@@ -459,10 +474,26 @@ mobical:
 	\$(MAKE) -C "\$(CADICALBUILD)" mobical
 update:
 	\$(MAKE) -C "\$(CADICALBUILD)" update
-.PHONY: all cadical clean mobical test update
+format:
+	\$(MAKE) -C "\$(CADICALBUILD)" format
+.PHONY: all cadical clean mobical test format
 EOF
 
 msg "generated '../makefile' as proxy to ..."
 msg "... '$build/makefile'"
+
+#--------------------------------------------------------------------------#
+
+if [ -f $src/makefile ]
+then
+  msg "removing '$src/makefile'"
+  rm -f $src/makefile
+fi
+
+msg "linking '$root/makefile'"
+ln -s $root/makefile $src/makefile
+
+#--------------------------------------------------------------------------#
+
 msg "now run ${HILITE}'make'${NORMAL} to compile CaDiCaL"
 msg "optionally run 'make test'"

@@ -17,8 +17,8 @@ extern "C" {
 
 typedef struct CCaDiCaL CCaDiCaL;
 
-DllExport const char * ccadical_signature (void);
-DllExport CCaDiCaL * ccadical_init (void);
+DllExport const char *ccadical_signature (void);
+DllExport CCaDiCaL *ccadical_init (void);
 DllExport void ccadical_release (CCaDiCaL *);
 
 DllExport void ccadical_add (CCaDiCaL *, int lit);
@@ -30,13 +30,14 @@ DllExport int ccadical_failed (CCaDiCaL *, int lit);
 DllExport void ccadical_set_terminate (CCaDiCaL *,
   void * state, int (*terminate)(void * state));
 
-void ccadical_set_learn (CCaDiCaL *,
-  void * state, int max_length, void (*learn)(void * state, int * clause));
+void ccadical_set_learn (CCaDiCaL *, void *state, int max_length,
+                         void (*learn) (void *state, int *clause));
 
 /*------------------------------------------------------------------------*/
 
 // Non-IPASIR conformant 'C' functions.
-
+DllExport void ccadical_constrain(CCaDiCaL *, int lit);
+DllExport int ccadical_constraint_failed(CCaDiCaL *);
 DllExport void ccadical_set_option (CCaDiCaL *, const char * name, int val);
 DllExport void ccadical_limit (CCaDiCaL *, const char * name, int limit);
 DllExport int ccadical_get_option (CCaDiCaL *, const char * name);

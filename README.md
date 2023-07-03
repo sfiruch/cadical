@@ -1,5 +1,4 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://travis-ci.com/arminbiere/cadical.svg?branch=master)](https://travis-ci.com/arminbiere/cadical)
 
 
 CaDiCaL Simplified Satisfiability Solver
@@ -25,7 +24,7 @@ for API usage.
   
 See [`BUILD.md`](BUILD.md) for options and more details related to the build
 process and [`test/README.md`](test/README.md) for testing the library and
-the solver.
+the solver.  Since release 1.5.1 we have a [`NEWS.md`](NEWS.md) file.
 
 The solver has the following usage `cadical [ dimacs [ proof ] ]`.
 See `cadical -h` for more options.
