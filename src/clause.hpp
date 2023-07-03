@@ -5,8 +5,8 @@ namespace CaDiCaL {
 
 /*------------------------------------------------------------------------*/
 
-typedef       int *       literal_iterator;
-typedef const int * const_literal_iterator;
+typedef int *literal_iterator;
+typedef const int *const_literal_iterator;
 
 /*------------------------------------------------------------------------*/
 
@@ -24,27 +24,24 @@ typedef const int * const_literal_iterator;
 
 #pragma pack(push, 1)
 struct Clause {
-#ifdef LOGGING
-  int64_t id;         // Only useful for debugging.
-#endif
-
-  unsigned conditioned:1; // Tried for globally blocked clause elimination.
-  unsigned covered:1;     // Already considered for covered clause elimination.
-  unsigned enqueued:1;    // Enqueued on backward queue.
-  unsigned frozen:1;      // Temporarily frozen (in covered clause elimination).
-  unsigned garbage:1;     // can be garbage collected unless it is a 'reason'
-  unsigned gate:1 ;       // Clause part of a gate (function definition).
-  unsigned hyper:1;       // redundant hyper binary or ternary resolved
-  unsigned instantiated:1;// tried to instantiate
-  unsigned keep:1;        // always keep this clause (if redundant)
-  unsigned moved:1;       // moved during garbage collector ('copy' valid)
-  unsigned reason:1;      // reason / antecedent clause can not be collected
-  unsigned redundant:1;   // aka 'learned' so not 'irredundant' (original)
-  unsigned transred:1;    // already checked for transitive reduction
-  unsigned subsume:1;     // not checked in last subsumption round
-  unsigned used:2;    // resolved in conflict analysis since last 'reduce'
-  unsigned vivified:1;    // clause already vivified
-  unsigned vivify:1;      // clause scheduled to be vivified
+  uint64_t id;          // Used to create LRAT-style proofs
+  unsigned conditioned : 1; // Tried for globally blocked clause elimination.
+  unsigned covered : 1;  // Already considered for covered clause elimination.
+  unsigned enqueued : 1; // Enqueued on backward queue.
+  unsigned frozen : 1;   // Temporarily frozen (in covered clause elimination).
+  unsigned garbage : 1;  // can be garbage collected unless it is a 'reason'
+  unsigned gate : 1;     // Clause part of a gate (function definition).
+  unsigned hyper : 1;    // redundant hyper binary or ternary resolved
+  unsigned instantiated : 1; // tried to instantiate
+  unsigned keep : 1;         // always keep this clause (if redundant)
+  unsigned moved : 1;        // moved during garbage collector ('copy' valid)
+  unsigned reason : 1;       // reason / antecedent clause can not be collected
+  unsigned redundant : 1;    // aka 'learned' so not 'irredundant' (original)
+  unsigned transred : 1;     // already checked for transitive reduction
+  unsigned subsume : 1;      // not checked in last subsumption round
+  unsigned used : 2; // resolved in conflict analysis since last 'reduce'
+  unsigned vivified : 1; // clause already vivified
+  unsigned vivify : 1;   // clause scheduled to be vivified
 
   // The glucose level ('LBD' or short 'glue') is a heuristic value for the
   // expected usefulness of a learned clause, where smaller glue is consider
@@ -82,14 +79,14 @@ struct Clause {
   //
   int glue;
 
-  int size;         // Actual size of 'literals' (at least 2).
-  int pos;          // Position of last watch replacement [Gent'13].
+  int size; // Actual size of 'literals' (at least 2).
+  int pos;  // Position of last watch replacement [Gent'13].
 
   union {
 
-    int literals[2];    // Of variadic 'size' (shrunken if strengthened).
+    int literals[2]; // Of variadic 'size' (shrunken if strengthened).
 
-    Clause * copy;      // Only valid if 'moved', then that's where to.
+    Clause *copy; // Only valid if 'moved', then that's where to.
     //
     // The 'copy' field is only valid for 'moved' clauses in the moving
     // garbage collector 'copy_non_garbage_clauses' for keeping clauses
@@ -97,11 +94,11 @@ struct Clause {
     // the time, 'literals' is valid.  See 'collect.cpp' for details.
   };
 
-  literal_iterator       begin ()       { return literals; }
-  literal_iterator         end ()       { return literals + size; }
+  literal_iterator begin () { return literals; }
+  literal_iterator end () { return literals + size; }
 
   const_literal_iterator begin () const { return literals; }
-  const_literal_iterator   end () const { return literals + size; }
+  const_literal_iterator end () const { return literals + size; }
 
   static size_t bytes (int size) {
 
@@ -128,7 +125,7 @@ struct Clause {
 };
 
 struct clause_smaller_size {
-  bool operator () (const Clause * a, const Clause * b) {
+  bool operator() (const Clause *a, const Clause *b) {
     return a->size < b->size;
   }
 };
@@ -142,12 +139,12 @@ struct clause_smaller_size {
 // 'opts.logsort' in 'logging.cpp').
 
 struct clause_lit_less_than {
-  bool operator () (int a, int b) const {
+  bool operator() (int a, int b) const {
     int s = abs (a), t = abs (b);
     return s < t || (s == t && a < b);
   }
 };
 
-}
+} // namespace CaDiCaL
 
 #endif
