@@ -201,6 +201,10 @@ class Terminator;
 class ClauseIterator;
 class WitnessIterator;
 class ExternalPropagator;
+class Tracer;
+class InternalTracer;
+class FileTracer;
+class StatTracer;
 
 /*------------------------------------------------------------------------*/
 
@@ -228,6 +232,23 @@ public:
   //   if (!lit) ensure (UNKNOWN)       // and thus READY
   //
   void add (int lit);
+
+  // Here are functions simplifying clause addition. The given literals
+  // should all be valid (different from 'INT_MIN' and different from '0').
+  //
+  //   require (VALID)
+  //   ensure (UNKNOWN)
+  //
+  void clause (int);                      // Add unit clause.
+  void clause (int, int);                 // Add binary clause.
+  void clause (int, int, int);            // Add ternary clause.
+  void clause (int, int, int, int);       // Add quaternary clause.
+  void clause (const std::vector<int> &); // Add literal vector as clause.
+  void clause (const int *, size_t);      // Add literal array as clause.
+
+  // This function can be used to check if the formula is already
+  // inconsistent (contains the empty clause or was proven to be
+  // root-level unsatisfiable).
 
   bool inconsistent ();
 
@@ -707,19 +728,77 @@ public:
   bool trace_proof (FILE *file, const char *name); // Write DRAT proof.
   bool trace_proof (const char *path);             // Open & write proof.
 
-  // Flush proof trace file.
+  // Flushing the proof trace file eventually calls 'fflush' on the actual
+  // file or pipe and thus if this function returns all the proof steps
+  // should have been written (with the same guarantees as 'fflush').
+  //
+  // The additional optional argument forces to print the number of addition
+  // and deletion steps in the proof even if the verbosity level is zero but
+  // not if quiet is set as well.  The default for the stand-alone solver is
+  // to print this information (in the 'closing proof' section) but for API
+  // usage of the library we want to stay silent unless explicitly requested
+  // or verbosity is non-zero (and as explained quiet is not set).
+  //
+  // This function can be called multiple times.
   //
   //   require (VALID)
   //   ensure (VALID)
   //
-  void flush_proof_trace ();
+  void flush_proof_trace (bool print = false);
 
-  // Close proof trace early.
+  // Close proof trace early.  Similar to 'flush' we allow the user to
+  // control with 'print' in a more fine-grained way whether statistics
+  // about the size of the written proof file and if compressed on-the-fly
+  // the number of actual bytes written (including deflation percentage) are
+  // printed.  Before actually closing (or detaching in case of writing to
+  // '<stdout>') we check whether 'flush_proof_trace' was called since the
+  // last time a proof step (addition or deletion) was traced.  If this is
+  // not the case we would call 'flush_proof_trace' with the same 'print'
+  // argument.
   //
   //   require (VALID)
   //   ensure (VALID)
   //
-  void close_proof_trace ();
+  void close_proof_trace (bool print = false);
+
+  // Enables clausal proof tracing with or without antecedents using
+  // the Tracer interface defined in 'tracer.hpp'
+  //
+  // InternalTracer, StatTracer and FileTracer for internal use
+  //
+  //   require (CONFIGURING)
+  //   ensure (CONFIGURING)
+  //
+  void connect_proof_tracer (Tracer *tracer, bool antecedents);
+  void connect_proof_tracer (InternalTracer *tracer, bool antecedents);
+  void connect_proof_tracer (StatTracer *tracer, bool antecedents);
+  void connect_proof_tracer (FileTracer *tracer, bool antecedents);
+
+  // Triggers the conclusion of incremental proofs.
+  // if the solver is SATISFIED it will trigger extend ()
+  // and give the model to the proof tracer through conclude_sat ()
+  // if the solver is UNSATISFIED it will trigger failing ()
+  // which will learn new clauses as explained below:
+  // In case of failed assumptions will provide a core negated
+  // as a clause through the proof tracer interface.
+  // With a failing contraint these can be multiple clauses.
+  // Then it will trigger a conclude_unsat event with the id(s)
+  // of the newly learnt clauses or the id of the global conflict.
+  //
+  //   require (SATISFIED || UNSATISFIED)
+  //   ensure (SATISFIED || UNSATISFIED)
+  //
+  void conclude ();
+
+  // Disconnect proof tracer. If this is not done before deleting
+  // the tracer will be deleted. Returns true if successful.
+  //
+  //   require (VALID)
+  //   ensure (VALID)
+  //
+  bool disconnect_proof_tracer (Tracer *tracer);
+  bool disconnect_proof_tracer (StatTracer *tracer);
+  bool disconnect_proof_tracer (FileTracer *tracer);
 
   //------------------------------------------------------------------------
 

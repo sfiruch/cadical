@@ -23,7 +23,7 @@
 // build process relies on 'VERSION' to be defined in 'build.hpp'.
 
 #ifndef VERSION
-#define VERSION "1.7.1"
+#define VERSION "1.9.0"
 #endif // VERSION
 
 /*------------------------------------------------------------------------*/
