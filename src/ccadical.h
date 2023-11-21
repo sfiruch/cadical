@@ -51,6 +51,9 @@ DllExport int ccadical_frozen (CCaDiCaL *, int lit);
 DllExport void ccadical_melt (CCaDiCaL *, int lit);
 DllExport int ccadical_simplify (CCaDiCaL *);
 
+DllExport void ccadical_phase (CCaDiCaL *, int lit);
+DllExport void ccadical_unphase (CCaDiCaL *, int lit);
+
 /*------------------------------------------------------------------------*/
 
 // Support legacy names used before moving to more IPASIR conforming names.
