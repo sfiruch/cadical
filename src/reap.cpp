@@ -1,4 +1,5 @@
 #include "reap.hpp"
+#include <unistd.h>
 #include <cassert>
 #include <climits>
 #include <cstring>

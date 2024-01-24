@@ -989,7 +989,10 @@ void App::catch_alarm () {
 // options table 'Options::table'.  All are shared among solvers.
 
 int main (int argc, char **argv) {
-  CaDiCaL::App app;
+#ifdef USE_PAL
+    pal_init();
+#endif
+    CaDiCaL::App app;
   int res = app.main (argc, argv);
   return res;
 }
