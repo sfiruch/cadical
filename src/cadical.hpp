@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <vector>
 
+extern "C" {
+#include <unistd.h>
+}
+
 /*========================================================================*/
 
 // We support semantic versioning (https://semver.org/), which means that we
@@ -1142,9 +1146,9 @@ private:
   // TODO: support for other compilers (beside 'gcc' and 'clang').
 
 #define CADICAL_ATTRIBUTE_FORMAT(FORMAT_POSITION, \
-                                 VARIADIC_ARGUMENT_POSITION) \
-  __attribute__ ((format (PRINTF_FORMAT, FORMAT_POSITION, \
-                          VARIADIC_ARGUMENT_POSITION)))
+                                 VARIADIC_ARGUMENT_POSITION) //\
+  //__attribute__ ((format (PRINTF_FORMAT, FORMAT_POSITION, \
+  //                        VARIADIC_ARGUMENT_POSITION)))
 
   // Messages in a common style.
   //

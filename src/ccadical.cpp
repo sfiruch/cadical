@@ -139,6 +139,14 @@ int ccadical_fixed (CCaDiCaL *wrapper, int lit) {
   return ((Wrapper *) wrapper)->solver->fixed (lit);
 }
 
+void ccadical_phase (CCaDiCaL *wrapper, int lit) {
+  ((Wrapper *) wrapper)->solver->phase (lit);
+}
+
+void ccadical_unphase (CCaDiCaL *wrapper, int lit) {
+  ((Wrapper *) wrapper)->solver->unphase (lit);
+}
+
 void ccadical_set_terminate (CCaDiCaL *ptr, void *state,
                              int (*terminate) (void *)) {
   Wrapper *wrapper = (Wrapper *) ptr;
@@ -198,11 +206,4 @@ int ccadical_declare_one_more_variable (CCaDiCaL *ptr) {
   return ((Wrapper *) ptr)->solver->declare_one_more_variable ();
 }
 
-void ccadical_phase (CCaDiCaL *wrapper, int lit) {
-  ((Wrapper *) wrapper)->solver->phase (lit);
-}
-
-void ccadical_unphase (CCaDiCaL *wrapper, int lit) {
-  ((Wrapper *) wrapper)->solver->unphase (lit);
-}
 }

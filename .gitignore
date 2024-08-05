@@ -2,3 +2,7 @@ build
 makefile
 .aider*
 *~
+/.vs
+/x64
+/CaDiCaL.vcxproj.user
+/CaDiCaL/x64
