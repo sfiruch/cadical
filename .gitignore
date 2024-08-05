@@ -1,2 +1,6 @@
 build
 makefile
+/.vs
+/x64
+/CaDiCaL.vcxproj.user
+/CaDiCaL/x64

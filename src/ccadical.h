@@ -10,47 +10,51 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
+#define DllExport __declspec(dllexport)
 // C wrapper for CaDiCaL's C++ API following IPASIR.
 
 typedef struct CCaDiCaL CCaDiCaL;
 
-const char *ccadical_signature (void);
-CCaDiCaL *ccadical_init (void);
-void ccadical_release (CCaDiCaL *);
+DllExport const char *ccadical_signature (void);
+DllExport CCaDiCaL *ccadical_init (void);
+DllExport void ccadical_release (CCaDiCaL *);
 
-void ccadical_add (CCaDiCaL *, int lit);
-void ccadical_assume (CCaDiCaL *, int lit);
-int ccadical_solve (CCaDiCaL *);
-int ccadical_val (CCaDiCaL *, int lit);
-int ccadical_failed (CCaDiCaL *, int lit);
+DllExport void ccadical_add (CCaDiCaL *, int lit);
+DllExport void ccadical_assume (CCaDiCaL *, int lit);
+DllExport int ccadical_solve (CCaDiCaL *);
+DllExport int ccadical_val (CCaDiCaL *, int lit);
+DllExport int ccadical_failed (CCaDiCaL *, int lit);
 
-void ccadical_set_terminate (CCaDiCaL *, void *state,
+DllExport void ccadical_set_terminate (CCaDiCaL *, void *state,
                              int (*terminate) (void *state));
 
-void ccadical_set_learn (CCaDiCaL *, void *state, int max_length,
+DllExport void ccadical_set_learn (CCaDiCaL *, void *state, int max_length,
                          void (*learn) (void *state, int *clause));
 
 /*------------------------------------------------------------------------*/
 
 // Non-IPASIR conformant 'C' functions.
 
-void ccadical_constrain (CCaDiCaL *, int lit);
-int ccadical_constraint_failed (CCaDiCaL *);
-void ccadical_set_option (CCaDiCaL *, const char *name, int val);
-void ccadical_limit (CCaDiCaL *, const char *name, int limit);
-int ccadical_get_option (CCaDiCaL *, const char *name);
-void ccadical_print_statistics (CCaDiCaL *);
-int64_t ccadical_active (CCaDiCaL *);
-int64_t ccadical_irredundant (CCaDiCaL *);
-int ccadical_fixed (CCaDiCaL *, int lit);
-int ccadical_trace_proof (CCaDiCaL *, FILE *, const char *);
-void ccadical_close_proof (CCaDiCaL *);
-void ccadical_conclude (CCaDiCaL *);
-void ccadical_terminate (CCaDiCaL *);
-void ccadical_freeze (CCaDiCaL *, int lit);
-int ccadical_frozen (CCaDiCaL *, int lit);
-void ccadical_melt (CCaDiCaL *, int lit);
-int ccadical_simplify (CCaDiCaL *);
+DllExport void ccadical_constrain (CCaDiCaL *, int lit);
+DllExport int ccadical_constraint_failed (CCaDiCaL *);
+DllExport void ccadical_set_option (CCaDiCaL *, const char *name, int val);
+DllExport void ccadical_limit (CCaDiCaL *, const char *name, int limit);
+DllExport int ccadical_get_option (CCaDiCaL *, const char *name);
+DllExport void ccadical_print_statistics (CCaDiCaL *);
+DllExport int64_t ccadical_active (CCaDiCaL *);
+DllExport int64_t ccadical_irredundant (CCaDiCaL *);
+DllExport int ccadical_fixed (CCaDiCaL *, int lit);
+DllExport int ccadical_trace_proof (CCaDiCaL *, FILE *, const char *);
+DllExport void ccadical_close_proof (CCaDiCaL *);
+DllExport void ccadical_conclude (CCaDiCaL *);
+DllExport void ccadical_terminate (CCaDiCaL *);
+DllExport void ccadical_freeze (CCaDiCaL *, int lit);
+DllExport int ccadical_frozen (CCaDiCaL *, int lit);
+DllExport void ccadical_melt (CCaDiCaL *, int lit);
+DllExport int ccadical_simplify (CCaDiCaL *);
+
+DllExport void ccadical_phase (CCaDiCaL *wrapper, int lit);
+DllExport void ccadical_unphase (CCaDiCaL *wrapper, int lit);
 
 /*------------------------------------------------------------------------*/
 

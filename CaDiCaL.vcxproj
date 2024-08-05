@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Library|x64">
+      <Configuration>Library</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{97003EE0-9395-4F87-9D60-2AFD0D18DB12}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>true</EnableASAN>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Library|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <EnableASAN>false</EnableASAN>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Library|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>USE_PAL;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Library|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>src/pal-win</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>USE_PAL;NDEBUG;NUNLOCKED;NBUILD;NO_STRICT;</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\analyze.cpp" />
+    <ClCompile Include="src\arena.cpp" />
+    <ClCompile Include="src\assume.cpp" />
+    <ClCompile Include="src\averages.cpp" />
+    <ClCompile Include="src\backtrack.cpp" />
+    <ClCompile Include="src\backward.cpp" />
+    <ClCompile Include="src\bins.cpp" />
+    <ClCompile Include="src\block.cpp" />
+    <ClCompile Include="src\cadical.cpp" />
+    <ClCompile Include="src\ccadical.cpp" />
+    <ClCompile Include="src\checker.cpp" />
+    <ClCompile Include="src\clause.cpp" />
+    <ClCompile Include="src\collect.cpp" />
+    <ClCompile Include="src\compact.cpp" />
+    <ClCompile Include="src\condition.cpp" />
+    <ClCompile Include="src\config.cpp" />
+    <ClCompile Include="src\constrain.cpp" />
+    <ClCompile Include="src\contract.cpp" />
+    <ClCompile Include="src\cover.cpp" />
+    <ClCompile Include="src\decide.cpp" />
+    <ClCompile Include="src\decompose.cpp" />
+    <ClCompile Include="src\deduplicate.cpp" />
+    <ClCompile Include="src\drattracer.cpp" />
+    <ClCompile Include="src\elim.cpp" />
+    <ClCompile Include="src\ema.cpp" />
+    <ClCompile Include="src\extend.cpp" />
+    <ClCompile Include="src\external.cpp" />
+    <ClCompile Include="src\external_propagate.cpp" />
+    <ClCompile Include="src\file.cpp" />
+    <ClCompile Include="src\flags.cpp" />
+    <ClCompile Include="src\flip.cpp" />
+    <ClCompile Include="src\format.cpp" />
+    <ClCompile Include="src\frattracer.cpp" />
+    <ClCompile Include="src\gates.cpp" />
+    <ClCompile Include="src\idruptracer.cpp" />
+    <ClCompile Include="src\instantiate.cpp" />
+    <ClCompile Include="src\internal.cpp" />
+    <ClCompile Include="src\ipasir.cpp" />
+    <ClCompile Include="src\lidruptracer.cpp" />
+    <ClCompile Include="src\limit.cpp" />
+    <ClCompile Include="src\logging.cpp" />
+    <ClCompile Include="src\lookahead.cpp" />
+    <ClCompile Include="src\lratbuilder.cpp" />
+    <ClCompile Include="src\lratchecker.cpp" />
+    <ClCompile Include="src\lrattracer.cpp" />
+    <ClCompile Include="src\lucky.cpp" />
+    <ClCompile Include="src\message.cpp" />
+    <ClCompile Include="src\minimize.cpp" />
+    <ClCompile Include="src\occs.cpp" />
+    <ClCompile Include="src\options.cpp" />
+    <ClCompile Include="src\pal-win\unistd.c" />
+    <ClCompile Include="src\parse.cpp" />
+    <ClCompile Include="src\phases.cpp" />
+    <ClCompile Include="src\probe.cpp" />
+    <ClCompile Include="src\profile.cpp" />
+    <ClCompile Include="src\proof.cpp" />
+    <ClCompile Include="src\propagate.cpp" />
+    <ClCompile Include="src\queue.cpp" />
+    <ClCompile Include="src\random.cpp" />
+    <ClCompile Include="src\reap.cpp" />
+    <ClCompile Include="src\reduce.cpp" />
+    <ClCompile Include="src\rephase.cpp" />
+    <ClCompile Include="src\report.cpp" />
+    <ClCompile Include="src\resources.cpp" />
+    <ClCompile Include="src\restart.cpp" />
+    <ClCompile Include="src\restore.cpp" />
+    <ClCompile Include="src\score.cpp" />
+    <ClCompile Include="src\shrink.cpp" />
+    <ClCompile Include="src\signal.cpp" />
+    <ClCompile Include="src\solution.cpp" />
+    <ClCompile Include="src\solver.cpp" />
+    <ClCompile Include="src\stats.cpp" />
+    <ClCompile Include="src\subsume.cpp" />
+    <ClCompile Include="src\terminal.cpp" />
+    <ClCompile Include="src\ternary.cpp" />
+    <ClCompile Include="src\transred.cpp" />
+    <ClCompile Include="src\util.cpp" />
+    <ClCompile Include="src\var.cpp" />
+    <ClCompile Include="src\veripbtracer.cpp" />
+    <ClCompile Include="src\version.cpp" />
+    <ClCompile Include="src\vivify.cpp" />
+    <ClCompile Include="src\walk.cpp" />
+    <ClCompile Include="src\watch.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\arena.hpp" />
+    <ClInclude Include="src\averages.hpp" />
+    <ClInclude Include="src\bins.hpp" />
+    <ClInclude Include="src\block.hpp" />
+    <ClInclude Include="src\cadical.hpp" />
+    <ClInclude Include="src\ccadical.h" />
+    <ClInclude Include="src\checker.hpp" />
+    <ClInclude Include="src\clause.hpp" />
+    <ClInclude Include="src\config.hpp" />
+    <ClInclude Include="src\contract.hpp" />
+    <ClInclude Include="src\cover.hpp" />
+    <ClInclude Include="src\decompose.hpp" />
+    <ClInclude Include="src\drattracer.hpp" />
+    <ClInclude Include="src\elim.hpp" />
+    <ClInclude Include="src\ema.hpp" />
+    <ClInclude Include="src\external.hpp" />
+    <ClInclude Include="src\file.hpp" />
+    <ClInclude Include="src\flags.hpp" />
+    <ClInclude Include="src\format.hpp" />
+    <ClInclude Include="src\frattracer.hpp" />
+    <ClInclude Include="src\heap.hpp" />
+    <ClInclude Include="src\idruptracer.hpp" />
+    <ClInclude Include="src\instantiate.hpp" />
+    <ClInclude Include="src\internal.hpp" />
+    <ClInclude Include="src\inttypes.hpp" />
+    <ClInclude Include="src\ipasir.h" />
+    <ClInclude Include="src\level.hpp" />
+    <ClInclude Include="src\lidruptracer.hpp" />
+    <ClInclude Include="src\limit.hpp" />
+    <ClInclude Include="src\logging.hpp" />
+    <ClInclude Include="src\lratbuilder.hpp" />
+    <ClInclude Include="src\lratchecker.hpp" />
+    <ClInclude Include="src\lrattracer.hpp" />
+    <ClInclude Include="src\message.hpp" />
+    <ClInclude Include="src\observer.hpp" />
+    <ClInclude Include="src\occs.hpp" />
+    <ClInclude Include="src\options.hpp" />
+    <ClInclude Include="src\pal-win\sys\mman.h" />
+    <ClInclude Include="src\pal-win\sys\resource.h" />
+    <ClInclude Include="src\pal-win\sys\time.h" />
+    <ClInclude Include="src\pal-win\sys\wait.h" />
+    <ClInclude Include="src\pal-win\unistd.h" />
+    <ClInclude Include="src\parse.hpp" />
+    <ClInclude Include="src\phases.hpp" />
+    <ClInclude Include="src\profile.hpp" />
+    <ClInclude Include="src\proof.hpp" />
+    <ClInclude Include="src\queue.hpp" />
+    <ClInclude Include="src\radix.hpp" />
+    <ClInclude Include="src\random.hpp" />
+    <ClInclude Include="src\range.hpp" />
+    <ClInclude Include="src\reap.hpp" />
+    <ClInclude Include="src\reluctant.hpp" />
+    <ClInclude Include="src\resources.hpp" />
+    <ClInclude Include="src\score.hpp" />
+    <ClInclude Include="src\signal.hpp" />
+    <ClInclude Include="src\stats.hpp" />
+    <ClInclude Include="src\terminal.hpp" />
+    <ClInclude Include="src\tracer.hpp" />
+    <ClInclude Include="src\util.hpp" />
+    <ClInclude Include="src\var.hpp" />
+    <ClInclude Include="src\veripbtracer.hpp" />
+    <ClInclude Include="src\version.hpp" />
+    <ClInclude Include="src\vivify.hpp" />
+    <ClInclude Include="src\watch.hpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

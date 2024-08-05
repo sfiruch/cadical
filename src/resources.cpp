@@ -39,7 +39,7 @@ extern "C" {
 
 namespace CaDiCaL {
 
-/*------------------------------------------------------------------------*/
+    /*------------------------------------------------------------------------*/
 
 #ifdef __WIN32
 
@@ -55,19 +55,19 @@ double absolute_real_time () {
 }
 
 double absolute_process_time () {
-  double res = 0;
-  FILETIME fc, fe, fu, fs;
+        double res = 0;
+        FILETIME fc, fe, fu, fs;
   if (GetProcessTimes (GetCurrentProcess (), &fc, &fe, &fu, &fs)) {
-    ULARGE_INTEGER u, s;
-    u.LowPart = fu.dwLowDateTime;
-    u.HighPart = fu.dwHighDateTime;
-    s.LowPart = fs.dwLowDateTime;
-    s.HighPart = fs.dwHighDateTime;
+            ULARGE_INTEGER u, s;
+            u.LowPart = fu.dwLowDateTime;
+            u.HighPart = fu.dwHighDateTime;
+            s.LowPart = fs.dwLowDateTime;
+            s.HighPart = fs.dwHighDateTime;
     res = (__int64) u.QuadPart + (__int64) s.QuadPart;
-    res *= 1e-7;
-  }
-  return res;
-}
+            res *= 1e-7;
+        }
+        return res;
+    }
 
 #else
 
@@ -78,9 +78,9 @@ double absolute_real_time () {
   return 1e-6 * tv.tv_usec + tv.tv_sec;
 }
 
-// We use 'getrusage' for 'process_time' and 'maximum_resident_set_size'
-// which is pretty standard on Unix but probably not available on Windows
-// etc.  For different variants of Unix not all fields are meaningful.
+    // We use 'getrusage' for 'process_time' and 'maximum_resident_set_size'
+    // which is pretty standard on Unix but probably not available on Windows
+    // etc.  For different variants of Unix not all fields are meaningful.
 
 double absolute_process_time () {
   double res;
@@ -133,12 +133,12 @@ uint64_t maximum_resident_set_size () {
   return ((uint64_t) u.ru_maxrss) << 10;
 }
 
-// Unfortunately 'getrusage' on Linux does not support current resident set
-// size (the field 'ru_ixrss' is there but according to the man page
-// 'unused'). Thus we fall back to use the '/proc' file system instead.  So
-// this is not portable at all and needs to be replaced on other systems
-// The code would still compile though (assuming 'sysconf' and
-// '_SC_PAGESIZE' are available).
+    // Unfortunately 'getrusage' on Linux does not support current resident set
+    // size (the field 'ru_ixrss' is there but according to the man page
+    // 'unused'). Thus we fall back to use the '/proc' file system instead.  So
+    // this is not portable at all and needs to be replaced on other systems
+    // The code would still compile though (assuming 'sysconf' and
+    // '_SC_PAGESIZE' are available).
 
 uint64_t current_resident_set_size () {
   char path[64];
@@ -146,7 +146,12 @@ uint64_t current_resident_set_size () {
             (int64_t) getpid ());
   FILE *file = fopen (path, "r");
   if (!file)
-    return 0;
+  {
+      // Fall back to rusage, if the '/proc' file system is not found
+      struct rusage u;
+      if (getrusage(RUSAGE_SELF, &u)) return 0;
+      return ((size_t)u.ru_idrss + (size_t)u.ru_ixrss) << 10;
+  }
   uint64_t dummy, rss;
   int scanned = fscanf (file, "%" PRIu64 " %" PRIu64 "", &dummy, &rss);
   fclose (file);
@@ -155,6 +160,6 @@ uint64_t current_resident_set_size () {
 
 #endif
 
-/*------------------------------------------------------------------------*/
+    /*------------------------------------------------------------------------*/
 
 } // namespace CaDiCaL

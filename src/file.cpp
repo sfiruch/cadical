@@ -45,6 +45,7 @@ File::File (Internal *i, bool w, int c, int p, FILE *f, const char *n)
 
 bool File::exists (const char *path) {
   struct stat buf;
+  if (path == nullptr) return false;
   if (stat (path, &buf))
     return false;
   if (access (path, R_OK))
