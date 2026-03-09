@@ -2744,8 +2744,14 @@ void Closure::update_xor_gate (Gate *g, GatesTable::iterator git) {
 void Closure::simplify_and_gate (Gate *g) {
   if (skip_and_gate (g))
     return;
-  GatesTable::iterator git = (g->indexed ? table.find (g) : end (table));
-  assert (!g->indexed || git != end (table));
+  // Remove before modifying rhs: MSVC's unordered_set::erase(iterator)
+  // recomputes the hash from the current key to fix up bucket pointers,
+  // so the erase must happen before rhs changes (unlike GCC/Clang STL).
+  if (g->indexed) {
+    table.erase (table.find (g));
+    g->indexed = false;
+  }
+  GatesTable::iterator git = end (table);
   LOG (g, "simplifying");
   int falsifies = 0;
   std::vector<int>::iterator it = begin (g->rhs);
@@ -4496,8 +4502,11 @@ void Closure::rewrite_and_gate (Gate *g, int dst, int src, LRAT_ID id1,
   assert (dst);
   assert (internal->val (src) == internal->val (dst));
   LOG (g, "rewriting %d into %d in", src, dst);
-  GatesTable::iterator git = (g->indexed ? table.find (g) : end (table));
-  assert (!g->indexed || git != table.end ());
+  if (g->indexed) {
+    table.erase (table.find (g));
+    g->indexed = false;
+  }
+  GatesTable::iterator git = end (table);
   int clashing = 0, falsifies = 0;
   unsigned dst_count = 0, not_dst_count = 0;
   auto q = begin (g->rhs);
@@ -4692,7 +4701,11 @@ void Closure::rewrite_xor_gate (Gate *g, int dst, int src) {
     return;
   LOG (g, "rewriting (%d -> %d)", src, dst);
   check_xor_gate_implied (g);
-  GatesTable::iterator git = (g->indexed ? table.find (g) : end (table));
+  if (g->indexed) {
+    table.erase (table.find (g));
+    g->indexed = false;
+  }
+  GatesTable::iterator git = end (table);
   size_t j = 0, dst_count = 0;
   bool original_dst_negated = (dst < 0);
   dst = internal->vidx (dst);
@@ -4766,7 +4779,11 @@ void Closure::simplify_xor_gate (Gate *g) {
     return;
   check_xor_gate_implied (g);
   unsigned negate = 0;
-  GatesTable::iterator git = (g->indexed ? table.find (g) : end (table));
+  if (g->indexed) {
+    table.erase (table.find (g));
+    g->indexed = false;
+  }
+  GatesTable::iterator git = end (table);
   const size_t size = g->arity ();
   size_t j = 0;
   for (size_t i = 0; i < size; ++i) {
