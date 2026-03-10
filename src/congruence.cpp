@@ -5694,9 +5694,11 @@ void Closure::rewrite_ite_gate (Gate *g, int dst, int src) {
 
   bool garbage = false;
   bool shrink = true;
-  const auto git = g->indexed ? table.find (g) : end (table);
-  assert (!g->indexed || git != end (table));
-  assert (*git == g);
+  if (g->indexed) {
+    table.erase (table.find (g));
+    g->indexed = false;
+  }
+  GatesTable::iterator git = end (table);
   if (internal->val (cond) && internal->val (then_lit) &&
       internal->val (else_lit)) { // propagation has set all value anyway
     LOG (g, "all values are set");
@@ -6637,8 +6639,11 @@ void Closure::simplify_ite_gate (Gate *g) {
       }
     } else {
       assert (!!v_then + !!v_else == 1);
-      auto git = g->indexed ? table.find (g) : end (table);
-      assert (!g->indexed || git != end (table));
+      if (g->indexed) {
+        table.erase (table.find (g));
+        g->indexed = false;
+      }
+      GatesTable::iterator git = end (table);
       if (v_then > 0) {
         g->lhs = -lhs;
         rhs[0] = -cond;
@@ -6681,7 +6686,8 @@ void Closure::simplify_ite_gate (Gate *g) {
           ++internal->stats.congruence.ites;
         }
       } else {
-        remove_gate (git);
+        if (g->indexed)
+          remove_gate (git);
         index_gate (g);
         garbage = false;
         for (auto lit : rhs)
