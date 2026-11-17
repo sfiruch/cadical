@@ -1,8 +1,12 @@
 #include "internal.hpp"
+#include <initializer_list>
 
 namespace CaDiCaL {
 
-Limit::Limit () { memset (this, 0, sizeof *this); }
+Limit::Limit () {
+  memset (this, 0, sizeof *this);
+  assert (!initialized);
+}
 
 /*------------------------------------------------------------------------*/
 
@@ -26,7 +30,7 @@ Inc::Inc () {
   ticks = decisions = conflicts = -1; // unlimited
 }
 
-void Internal::limit_terminate (int l) {
+void Internal::limit_terminate (int64_t l) {
   if (l <= 0 && !lim.terminate.forced) {
     LOG ("keeping unbounded terminate limit");
   } else if (l <= 0) {
@@ -34,11 +38,11 @@ void Internal::limit_terminate (int l) {
     lim.terminate.forced = 0;
   } else {
     lim.terminate.forced = l;
-    LOG ("new terminate limit of %d calls", l);
+    LOG ("new terminate limit of %" PRId64 " calls", l);
   }
 }
 
-void Internal::limit_conflicts (int l) {
+void Internal::limit_conflicts (int64_t l) {
   if (l < 0 && inc.conflicts < 0) {
     LOG ("keeping unbounded conflict limit");
   } else if (l < 0) {
@@ -46,11 +50,11 @@ void Internal::limit_conflicts (int l) {
     inc.conflicts = -1;
   } else {
     inc.conflicts = l;
-    LOG ("new conflict limit of %d conflicts", l);
+    LOG ("new conflict limit of %" PRId64 " conflicts", l);
   }
 }
 
-void Internal::limit_decisions (int l) {
+void Internal::limit_decisions (int64_t l) {
   if (l < 0 && inc.decisions < 0) {
     LOG ("keeping unbounded decision limit");
   } else if (l < 0) {
@@ -58,7 +62,7 @@ void Internal::limit_decisions (int l) {
     inc.decisions = -1;
   } else {
     inc.decisions = l;
-    LOG ("new decision limit of %d decisions", l);
+    LOG ("new decision limit of %" PRId64 " decisions", l);
   }
 }
 
@@ -114,7 +118,7 @@ bool Internal::is_valid_limit (const char *name) {
   return false;
 }
 
-bool Internal::limit (const char *name, int l) {
+bool Internal::limit (const char *name, int64_t l) {
   bool res = true;
   if (!strcmp (name, "terminate"))
     limit_terminate (l);

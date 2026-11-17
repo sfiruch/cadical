@@ -110,7 +110,7 @@ bool Internal::hyper_ternary_resolve (Clause *c, int pivot, Clause *d) {
   LOG ("hyper binary resolving on pivot %d", pivot);
   LOG (c, "1st antecedent");
   LOG (d, "2nd antecedent");
-  stats.ternres++;
+  stats.ternary_resolutions++;
   assert (c->size == 3);
   assert (d->size == 3);
   assert (clause.empty ());
@@ -208,18 +208,18 @@ void Internal::ternary_lit (int pivot, int64_t &steps, int64_t &htrs) {
         lrat_chain.clear ();
         clause.clear ();
         LOG (r, "hyper ternary resolved");
-        stats.htrs++;
+        stats.ternary_htrs++;
         for (const auto &lit : *r)
           occs (lit).push_back (r);
         if (size == 2) {
           LOG ("hyper ternary resolvent subsumes both antecedents");
           mark_garbage (c);
           mark_garbage (d);
-          stats.htrs2++;
+          stats.ternary_htrs_binary++;
           break;
         } else {
           assert (r->size == 3);
-          stats.htrs3++;
+          stats.ternary_htrs_ternary++;
         }
       } else {
         LOG (clause, "ignoring size %zd resolvent", clause.size ());
@@ -282,6 +282,8 @@ bool Internal::ternary_round (int64_t &steps_limit, int64_t &htrs_limit) {
       continue;
     if (c->size > 3)
       continue;
+    if (terminated_asynchronously ())
+      break;
     bool assigned = false, marked = false;
     for (const auto &lit : *c) {
       if (val (lit)) {
@@ -365,12 +367,13 @@ bool Internal::ternary () {
 
   // No new ternary clauses added since last time?
   //
-  if (last.ternary.marked == stats.mark.ternary)
+  if (last.ternary.marked == stats.mark_ternary)
     return false;
 
   SET_EFFORT_LIMIT (limit, ternary, true);
 
-  START_SIMPLIFIER (ternary, TERNARY);
+  MODE_SCOPE_SIMPLIFY (TERNARY);
+  PROFILE_SCOPE_SIMPLIFY (ternary);
   stats.ternary++;
 
   assert (!level);
@@ -383,14 +386,16 @@ bool Internal::ternary () {
   // substantially, particularly for random formulas.  Thus we limit the
   // number of added clauses too (actually the number of 'htrs').
   //
-  int64_t htrs_limit = stats.current.redundant + stats.current.irredundant;
+  int64_t htrs_limit = stats.clauses_now_red + stats.clauses_now_irr;
   htrs_limit *= opts.ternarymaxadd;
   htrs_limit /= 100;
 
   // approximation of ternary ticks.
   // TODO: count with ternary.ticks directly.
-  int64_t steps_limit = stats.ticks.ternary - limit;
-  stats.ticks.ternary = limit;
+  int64_t steps_limit = limit - stats.ticks_ternary;
+  assert (steps_limit >= 0);
+  stats.ticks_ternary = limit;
+  stats.ticks += steps_limit;
 
   // With 'stats.ternary' we actually count the number of calls to
   // 'ternary_round' and not the number of calls to 'ternary'. But before
@@ -415,11 +420,11 @@ bool Internal::ternary () {
       break;
     if (round)
       stats.ternary++;
-    int old_htrs2 = stats.htrs2;
-    int old_htrs3 = stats.htrs3;
+    int old_htrs2 = stats.ternary_htrs_binary;
+    int old_htrs3 = stats.ternary_htrs_ternary;
     completed = ternary_round (steps_limit, htrs_limit);
-    int delta_htrs2 = stats.htrs2 - old_htrs2;
-    int delta_htrs3 = stats.htrs3 - old_htrs3;
+    int delta_htrs2 = stats.ternary_htrs_binary - old_htrs2;
+    int delta_htrs3 = stats.ternary_htrs_ternary - old_htrs3;
     PHASE ("ternary", stats.ternary,
            "derived %d ternary and %d binary resolvents", delta_htrs3,
            delta_htrs2);
@@ -440,9 +445,7 @@ bool Internal::ternary () {
   }
 
   if (completed)
-    last.ternary.marked = stats.mark.ternary;
-
-  STOP_SIMPLIFIER (ternary, TERNARY);
+    last.ternary.marked = stats.mark_ternary;
 
   return resolved_binary_clause;
 }

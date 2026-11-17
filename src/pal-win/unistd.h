@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#define NOGDI // 'wingdi.h' defines 'RELATIVE' which clashes with 'stats.cpp'
 #define __WIN32
 
 #include <Windows.h>

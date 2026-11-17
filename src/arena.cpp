@@ -2,9 +2,10 @@
 
 namespace CaDiCaL {
 
-Arena::Arena (Internal *i) {
-  memset ((void *) this, 0, sizeof *this);
-  internal = i;
+Arena::Arena (Internal *i) : internal (i) {
+  // avoids a clang++ warning when compiling without LOGGING
+  (void) internal;
+  from.start = from.top = from.end = to.start = to.end = to.top = nullptr;
 }
 
 Arena::~Arena () {

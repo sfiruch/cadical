@@ -20,7 +20,8 @@ bool Internal::inprobing () {
     return false;
   if (preprocessing)
     assert (lim.preprocessing);
-  if (stats.inprobingphases && last.inprobe.reductions == stats.reductions)
+  if (opts.reduce && stats.inprobingphases &&
+      last.inprobe.reductions == stats.reductions)
     return false;
   return lim.inprobe <= stats.conflicts;
 }
@@ -148,7 +149,7 @@ void Internal::probe_dominator_lrat (int dom, Clause *reason) {
 // Compute a dominator of two literals in the binary implication tree.
 
 int Internal::probe_dominator (int a, int b) {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   int l = a, k = b;
   Var *u = &var (l), *v = &var (k);
   assert (val (l) > 0), assert (val (k) > 0);
@@ -216,7 +217,7 @@ int Internal::probe_dominator (int a, int b) {
 // clauses anyhow.
 
 inline int Internal::hyper_binary_resolve (Clause *reason) {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   assert (level == 1);
   assert (reason->size > 2);
   const const_literal_iterator end = reason->end ();
@@ -231,7 +232,7 @@ inline int Internal::hyper_binary_resolve (Clause *reason) {
 #endif
   LOG (reason, "hyper binary resolving");
   stats.hbrs++;
-  stats.hbrsizes += reason->size;
+  stats.hbr_sizes += reason->size;
   const int lit = lits[1];
   int dom = -lit, non_root_level_literals = 0;
   for (k = lits + 2; k != end; k++) {
@@ -249,7 +250,7 @@ inline int Internal::hyper_binary_resolve (Clause *reason) {
       contained = (*k == -dom);
     const bool red = !contained || reason->redundant;
     if (red)
-      stats.hbreds++;
+      stats.hbr_redundant++;
     LOG ("new %s hyper binary resolvent %d %d",
          (red ? "redundant" : "irredundant"), -dom, lits[0]);
     assert (clause.empty ());
@@ -265,7 +266,7 @@ inline int Internal::hyper_binary_resolve (Clause *reason) {
     clause.clear ();
     lrat_chain.clear ();
     if (contained) {
-      stats.hbrsubs++;
+      stats.hbr_subsuming++;
       LOG (reason, "subsumed original");
       mark_garbage (reason);
     }
@@ -290,18 +291,18 @@ inline int Internal::hyper_binary_resolve (Clause *reason) {
 // comment on the differences.  More explanations are in 'propagate.cpp'.
 
 inline void Internal::probe_assign (int lit, int parent) {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   int idx = vidx (lit);
   assert (!val (idx));
   assert (!flags (idx).eliminated () || !parent);
   assert (!parent || val (parent) > 0);
   Var &v = var (idx);
   v.level = level;
-  v.trail = (int) trail.size ();
+  v.trail = get_trail_size ();
   assert ((int) num_assigned < max_var);
   num_assigned++;
   v.reason = level ? probe_reason : 0;
-  probe_reason = 0;
+  probe_reason = nullptr;
   set_parent_reason_literal (lit, parent);
   if (!level)
     learn_unit_clause (lit);
@@ -319,7 +320,7 @@ inline void Internal::probe_assign (int lit, int parent) {
   // probing attempts.  Search for 'propfixed' in 'probe.cpp' for details.
   //
   if (level)
-    propfixed (lit) = stats.all.fixed;
+    propfixed (lit) = stats.vars_all_fixed;
 
   if (parent)
     LOG ("probe assign %d parent %d", lit, parent);
@@ -330,16 +331,16 @@ inline void Internal::probe_assign (int lit, int parent) {
 }
 
 void Internal::probe_assign_decision (int lit) {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   assert (!level);
   assert (propagated == trail.size ());
   level++;
-  control.push_back (Level (lit, trail.size ()));
+  control.push_back (Level (lit, get_trail_size ()));
   probe_assign (lit, 0);
 }
 
 void Internal::probe_assign_unit (int lit) {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   assert (!level);
   assert (active (lit));
   probe_assign (lit, 0);
@@ -381,8 +382,8 @@ inline void Internal::probe_lrat_for_units (int lit) {
 // tree instead of a DAG.  Statistics counters are also different.
 
 inline void Internal::probe_propagate2 () {
-  require_mode (PROBE);
-  int64_t &ticks = stats.ticks.probe;
+  MODE_REQUIRE (PROBE);
+  int64_t &ticks = stats.ticks_probe;
   while (propagated2 != trail.size ()) {
     const int lit = -trail[propagated2++];
     LOG ("probe propagating %d over binary clauses", -lit);
@@ -410,11 +411,11 @@ inline void Internal::probe_propagate2 () {
 }
 
 bool Internal::probe_propagate () {
-  require_mode (PROBE);
+  MODE_REQUIRE (PROBE);
   assert (!unsat);
-  START (propagate);
-  int64_t before = propagated2 = propagated;
-  int64_t &ticks = stats.ticks.probe;
+  PROFILE_SCOPE (propagate);
+  const size_t before = propagated2 = propagated;
+  int64_t &ticks = stats.ticks_probe;
   while (!conflict) {
     if (propagated2 != trail.size ())
       probe_propagate2 ();
@@ -498,11 +499,11 @@ bool Internal::probe_propagate () {
     } else
       break;
   }
-  int64_t delta = propagated2 - before;
-  stats.propagations.probe += delta;
+  int64_t delta = (int64_t) propagated2 - before;
+  stats.propagations_probe += delta;
+  stats.propagations += delta;
   if (conflict)
     LOG (conflict, "conflict");
-  STOP (propagate);
   return !conflict;
 }
 
@@ -513,8 +514,8 @@ bool Internal::probe_propagate () {
 void Internal::failed_literal (int failed) {
 
   LOG ("analyzing failed literal probe %d", failed);
-  stats.failed++;
-  stats.probefailed++;
+  stats.failed_literals++;
+  stats.probe_failed_literals++;
 
   assert (!unsat);
   assert (conflict);
@@ -522,7 +523,7 @@ void Internal::failed_literal (int failed) {
   assert (analyzed.empty ());
   assert (lrat_chain.empty ());
 
-  START (analyze);
+  PROFILE_SCOPE (analyze);
 
   LOG (conflict, "analyzing failed literal conflict");
 
@@ -586,8 +587,6 @@ void Internal::failed_literal (int failed) {
   work.clear ();
   erase_vector (work);
 
-  STOP (analyze);
-
   assert (unsat || val (failed) < 0);
 }
 
@@ -634,7 +633,7 @@ void Internal::generate_probes () {
 
   assert (probes.empty ());
 
-  int64_t &ticks = stats.ticks.probe;
+  int64_t &ticks = stats.ticks_probe;
 
   // First determine all the literals which occur in binary clauses. It is
   // way faster to go over the clauses once, instead of walking the watch
@@ -674,10 +673,10 @@ void Internal::generate_probes () {
 
     // See the discussion where 'propfixed' is used below.
     //
-    if (propfixed (probe) >= stats.all.fixed)
+    if (propfixed (probe) >= stats.vars_all_fixed)
       continue;
 
-    LOG ("scheduling probe %d negated occs %" PRId64 "", probe,
+    LOG ("scheduling probe %d negated occs %" PRIu64 "", probe,
          noccs (-probe));
     probes.push_back (probe);
   }
@@ -698,7 +697,7 @@ void Internal::generate_probes () {
 void Internal::flush_probes () {
 
   assert (!probes.empty ());
-  int64_t &ticks = stats.ticks.probe;
+  int64_t &ticks = stats.ticks_probe;
 
   init_noccs ();
   ticks += 1 + cache_lines (clauses.size (), sizeof (Clause *));
@@ -725,7 +724,7 @@ void Internal::flush_probes () {
     if (have_pos_bin_occs)
       lit = -lit;
     assert (!noccs (lit)), assert (noccs (-lit) > 0);
-    if (propfixed (lit) >= stats.all.fixed)
+    if (propfixed (lit) >= stats.vars_all_fixed)
       continue;
     LOG ("keeping probe %d negated occs %" PRId64 "", lit, noccs (-lit));
     *j++ = lit;
@@ -776,7 +775,7 @@ int Internal::next_probe () {
       // Alg. 4 in his JAIR article from 2002) and it has also been
       // contributed to the thesis work of Yacine Boufkhad.
       //
-      if (propfixed (probe) >= stats.all.fixed)
+      if (propfixed (probe) >= stats.vars_all_fixed)
         continue;
 
       return probe;
@@ -794,8 +793,8 @@ bool Internal::probe () {
     return false;
 
   SET_EFFORT_LIMIT (limit, probe, true);
-
-  START_SIMPLIFIER (probe, PROBE);
+  MODE_SCOPE_SIMPLIFY (PROBE);
+  PROFILE_SCOPE_SIMPLIFY (probe);
   stats.probingrounds++;
 
   // Probing is limited in terms of non-probing propagations
@@ -807,11 +806,16 @@ bool Internal::probe () {
   PHASE ("probe-round", stats.probingrounds,
          "probing limit of %" PRId64 " propagations ", limit);
 
-  int old_failed = stats.failed;
+  int old_failed = stats.failed_literals;
 #ifndef QUIET
   int64_t old_probed = stats.probed;
 #endif
   int64_t old_hbrs = stats.hbrs;
+
+  struct {
+    int64_t ticks;
+  } before, after;
+  before.ticks = stats.ticks_probe;
 
   if (!probes.empty ())
     flush_probes ();
@@ -829,7 +833,7 @@ bool Internal::probe () {
   int probe;
   init_probehbr_lrat ();
   while (!unsat && !terminated_asynchronously () &&
-         stats.ticks.probe < limit && (probe = next_probe ())) {
+         stats.ticks_probe < limit && (probe = next_probe ())) {
     stats.probed++;
     LOG ("probing %d", probe);
     probe_assign_decision (probe);
@@ -852,20 +856,20 @@ bool Internal::probe () {
       sort_watches ();
   }
 
-  int failed = stats.failed - old_failed;
+  int failed = stats.failed_literals - old_failed;
 #ifndef QUIET
   int64_t probed = stats.probed - old_probed;
 #endif
   int64_t hbrs = stats.hbrs - old_hbrs;
+  after.ticks = stats.ticks_probe;
 
+  stats.ticks += after.ticks - before.ticks;
   PHASE ("probe-round", stats.probingrounds,
          "probed %" PRId64 " and found %d failed literals", probed, failed);
 
   if (hbrs)
     PHASE ("probe-round", stats.probingrounds,
            "found %" PRId64 " hyper binary resolvents", hbrs);
-
-  STOP_SIMPLIFIER (probe, PROBE);
 
   report ('p', !opts.reportall && !(unsat + failed + hbrs));
 
@@ -885,35 +889,37 @@ bool Internal::probe () {
 // search ticks that have passed since the last vivify round and this
 // efficiency.
 // We want to be able to run inprocessing frequently, without it dominating
-// runtimes. This entire inprocessing scheme is scheduled after a certain
+// runtime. This entire inprocessing scheme is scheduled after a certain
 // amount of conflicts were found, the gap between two inprocessing rounds
 // increasing by a constant number each time. In effect, the number of
-// inprocessing rounds is allways the square root of the number of conflicts
+// inprocessing rounds is always the square root of the number of conflicts
 // with some constant factor.
 // This factor can also be with the option 'inprobeint'
 // Some of the techniques are not run always, for different reasons.
 // 'factor' or BVA depends on certain structures of the irredundant clauses
 // and as such will only be run when new irredundant clauses are derived or
 // it was not able to finish with the entire search space.
-// 'sweeping' is especially usefull on certain classes of formulas, and uses
-// a increasing or decreasing delay that depends on how usefull it was.
-// In cases where it is less usefull, we obviously want to reset the budged,
+// 'sweeping' is especially useful on certain classes of formulas, and uses
+// a increasing or decreasing delay that depends on how useful it was.
+// In cases where it is less useful, we obviously want to reset the budged,
 // even if the routine was delayed.
 // Additionally 'vivify', 'sweep' and 'factor' can also have a big initial
 // overhead in setting up the datastructures. This has to be accounted for
 // with the 'ticks', however, since inprocessing is done frequently, this
 // overhead is too expensive to pay. So instead, we accumulate the budget
-// of 'ticks' and delay the technique until it passes a certain threshhold,
+// of 'ticks' and delay the technique until it passes a certain threshold,
 // which depends on the the cost of initialization. Note that in the case of
-// sweeping, we have two different delays, one which resets the budged, and
+// sweeping, we have two different delays, one which resets the budget, and
 // one which passes it to the next round. In this case the former takes
-// precendent, until we would run sweeping once, at which point the focus
+// precedent, until we would run sweeping once, at which point the focus
 // switches to the latter delay until the budget is big enough, such that
 // sweeping can be run. Then we switch back to the other delay.
 
 void CaDiCaL::Internal::inprobe (bool update_limits) {
 
   if (unsat)
+    return;
+  if (terminated_asynchronously ())
     return;
   if (level)
     backtrack ();
@@ -928,7 +934,7 @@ void CaDiCaL::Internal::inprobe (bool update_limits) {
     private_steps = true;
   }
   const int before = active ();
-  const int before_extended = stats.variables_extension;
+  const int64_t before_extended = stats.variables_extension;
 
   // schedule of inprobing techniques.
   //
@@ -949,6 +955,7 @@ void CaDiCaL::Internal::inprobe (bool update_limits) {
     (void) vivify (); // resets watches
     transred ();      // builds big.
     binary_clauses_backbone ();
+    mark_duplicated_binary_clauses_as_garbage ();
     factor (); // resets watches, partial occurrence list
   }
 
@@ -961,23 +968,24 @@ void CaDiCaL::Internal::inprobe (bool update_limits) {
     return;
 
   const int after = active ();
-  const int after_extended = stats.variables_extension;
-  const int diff_extended = after_extended - before_extended;
+  const int64_t after_extended = stats.variables_extension;
+  const int64_t diff_extended = after_extended - before_extended;
   assert (diff_extended >= 0);
-  const int removed = before - after + diff_extended;
+  const int64_t removed = before - after + diff_extended;
   assert (removed >= 0);
 
   if (removed) {
-    stats.inprobesuccess++;
+    stats.inprobingsuccess++;
     PHASE ("probe-phase", stats.inprobingphases,
-           "successfully removed %d active variables %.0f%%", removed,
-           percent (removed, before));
+           "successfully removed %" PRId64 " active variables %.0f%%",
+           removed, percent (removed, before));
   } else
     PHASE ("probe-phase", stats.inprobingphases,
            "could not remove any active variable");
 
   const int64_t delta =
       25 * (int64_t) opts.inprobeint * log10 (stats.inprobingphases + 9);
+  assert (delta > 0);
   lim.inprobe = stats.conflicts + delta;
 
   PHASE ("probe-phase", stats.inprobingphases,

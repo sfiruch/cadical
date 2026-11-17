@@ -15,19 +15,20 @@ void Internal::transred () {
     return;
   if (terminated_asynchronously ())
     return;
-  if (!stats.current.redundant && !stats.current.irredundant)
+  if (!stats.clauses_now_red && !stats.clauses_now_irr)
     return;
 
   assert (opts.transred);
   assert (!level);
 
-  START_SIMPLIFIER (transred, TRANSRED);
-  stats.transreds++;
+  MODE_SCOPE_SIMPLIFY (TRANSRED);
+  PROFILE_SCOPE_SIMPLIFY (transred);
+  stats.transitive_rounds++;
 
   // Transitive reduction can not be run to completion for larger formulas
   // with many binary clauses.  We bound it in the same way as 'probe_core'.
   //
-  int64_t limit = stats.propagations.search;
+  int64_t limit = stats.propagations_search;
   limit -= last.transred.propagations;
   limit *= 1e-3 * opts.transredeffort;
   if (limit < opts.transredmineff)
@@ -35,7 +36,7 @@ void Internal::transred () {
   if (limit > opts.transredmaxeff)
     limit = opts.transredmaxeff;
 
-  PHASE ("transred", stats.transreds,
+  PHASE ("transred", stats.transitive_rounds,
          "transitive reduction limit of %" PRId64 " propagations", limit);
 
   const auto end = clauses.end ();
@@ -59,7 +60,7 @@ void Internal::transred () {
   //
   if (i == end) {
 
-    PHASE ("transred", stats.transreds,
+    PHASE ("transred", stats.transitive_rounds,
            "rescheduling all clauses since no clauses to check left");
     for (i = clauses.begin (); i != end; i++) {
       Clause *c = *i;
@@ -221,14 +222,14 @@ void Internal::transred () {
 
     if (transitive) {
       removed++;
-      stats.transitive++;
+      stats.transitive_clauses++;
       LOG (c, "transitive redundant");
       mark_garbage (c);
     } else if (failed) {
       units++;
       LOG ("found failed literal %d during transitive reduction", src);
-      stats.failed++;
-      stats.transredunits++;
+      stats.failed_literals++;
+      stats.transitive_units++;
       assign_unit (-src);
       if (!propagate ()) {
         VERBOSE (1, "propagating new unit results in conflict");
@@ -238,15 +239,15 @@ void Internal::transred () {
     lrat_chain.clear ();
   }
 
-  last.transred.propagations = stats.propagations.search;
-  stats.propagations.transred += propagations;
+  last.transred.propagations = stats.propagations_search;
+  stats.propagations_transred += propagations;
+  stats.propagations += propagations;
   erase_vector (work);
 
-  PHASE ("transred", stats.transreds,
+  PHASE ("transred", stats.transitive_rounds,
          "removed %" PRId64 " transitive clauses, found %" PRId64 " units",
          removed, units);
 
-  STOP_SIMPLIFIER (transred, TRANSRED);
   report ('t', !opts.reportall && !(removed + units));
 }
 

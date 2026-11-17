@@ -1,13 +1,16 @@
 #include "internal.hpp"
+#include <vector>
 
 namespace CaDiCaL {
 
 // Slightly different than 'bump_variable' since the variable is not
 // enqueued at all.
 
-inline void Internal::init_enqueue (int idx) {
+void Internal::init_enqueue (int idx) {
   Link &l = links[idx];
-  if (opts.reverse) {
+  assert (flags (idx).active () || flags (idx).fixed ());
+  if (opts.varprioritizeswap) {
+    LOG ("enqueueing %s at the beginning", LOGLIT (idx));
     l.prev = 0;
     if (queue.first) {
       assert (!links[queue.first].prev);
@@ -18,12 +21,16 @@ inline void Internal::init_enqueue (int idx) {
       queue.last = idx;
       btab[idx] = 0;
     }
-    assert (btab[idx] <= stats.bumped);
+    assert (btab[idx] <= stats.vars_bumped);
     l.next = queue.first;
     queue.first = idx;
-    if (!queue.unassigned)
-      update_queue_unassigned (queue.last);
+    LOG ("enqueueing %s at the beginning, next: %d, last: %d", LOGLIT (idx),
+         l.next, queue.last);
+    // due to interactions with IPASIR-UP, we need to update it every time.
+    // if (!queue.unassigned)
+    update_queue_unassigned (queue.last);
   } else {
+    LOG ("enqueueing %s at the end", LOGLIT (idx));
     l.next = 0;
     if (queue.last) {
       assert (!links[queue.last].next);
@@ -32,7 +39,7 @@ inline void Internal::init_enqueue (int idx) {
       assert (!queue.first);
       queue.first = idx;
     }
-    btab[idx] = ++stats.bumped;
+    btab[idx] = ++stats.vars_bumped;
     l.prev = queue.last;
     queue.last = idx;
     update_queue_unassigned (queue.last);
@@ -62,16 +69,18 @@ void Internal::shuffle_queue () {
     return;
   if (!opts.shufflequeue)
     return;
-  stats.shuffled++;
+  stats.scores_shuffled++;
   LOG ("shuffling queue");
   vector<int> shuffle;
   if (opts.shufflerandom) {
     for (int idx = max_var; idx; idx--)
-      shuffle.push_back (idx);
-    Random random (opts.seed); // global seed
-    random += stats.shuffled;  // different every time
-    for (int i = 0; i <= max_var - 2; i++) {
-      const int j = random.pick_int (i, max_var - 1);
+      if (!flags (idx).unused ())
+        shuffle.push_back (idx);
+    Random random (opts.seed);       // global seed
+    random += stats.scores_shuffled; // different every time
+    const int highest_var = shuffle.size ();
+    for (int i = 0; i <= highest_var - 2; i++) {
+      const int j = random.pick_int (i, highest_var - 1);
       swap (shuffle[i], shuffle[j]);
     }
   } else {
@@ -85,6 +94,38 @@ void Internal::shuffle_queue () {
   for (int idx = queue.last; idx; idx = links[idx].prev)
     btab[idx] = bumped--;
   queue.unassigned = queue.last;
+}
+
+void Internal::check_queue () {
+#ifndef NDEBUG
+  int res = queue.first;
+  std::vector<bool> seen;
+  seen.resize (max_var + 1, false);
+  while (res) {
+    assert (!flags (res).declared () && !flags (res).unused ());
+    seen[res] = true;
+    int next = links[res].next;
+    if (!next)
+      break;
+    assert (links[next].prev == res);
+    assert (btab[next] > btab[res]);
+    res = next;
+  }
+
+  res = queue.last;
+  while (res != queue.unassigned) {
+    assert (!flags (res).declared () && !flags (res).unused ());
+    assert (internal->val (res));
+    res = links[res].prev;
+    assert (res);
+  }
+
+  for (auto v : vars) {
+    if (!active (v))
+      continue;
+    assert (seen[v]);
+  }
+#endif
 }
 
 } // namespace CaDiCaL

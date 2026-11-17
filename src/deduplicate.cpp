@@ -25,8 +25,13 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
     return;
   if (terminated_asynchronously ())
     return;
+#ifndef NDEBUG
+  if (!new_binary_since_dedup)
+    return;
+#endif
 
-  START_SIMPLIFIER (deduplicate, DEDUP);
+  MODE_SCOPE_SIMPLIFY (DEDUP);
+  PROFILE_SCOPE_SIMPLIFY (deduplicate);
   stats.deduplications++;
 
   assert (!level);
@@ -153,8 +158,8 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
 
     if (unit) {
 
-      stats.failed++;
-      stats.hyperunary++;
+      stats.failed_literals++;
+      stats.deduplicate_unary++;
       assign_unit (unit);
       // lrat_chain.clear ();   done in search_assign
 
@@ -164,8 +169,8 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
       }
     }
   }
-  STOP_SIMPLIFIER (deduplicate, DEDUP);
-
+  assert (new_binary_since_dedup || !(subsumed + units));
+  new_binary_since_dedup = false;
   report ('2', !opts.reportall && !(subsumed + units));
 }
 
@@ -207,10 +212,16 @@ struct deduplicate_flush_smaller {
 //
 void Internal::deduplicate_all_clauses () {
   assert (!level);
-  clear_watches ();
-
+  if (unsat)
+    return;
+  if (!propagate ()) {
+    learn_empty_clause ();
+    return;
+  }
   mark_satisfied_clauses_as_garbage ();
   garbage_collection ();
+
+  clear_watches ();
 
   // in order to do the inprocessing inplace, we remove the deleted clauses,
   // put the binary deleted clauses first. Then we work on the non-deleted
@@ -245,7 +256,14 @@ void Internal::deduplicate_all_clauses () {
       LOG (prev, "subsuming");
       assert (!c->garbage);
       assert (!prev->garbage);
-      assert (c->redundant || !prev->redundant);
+      // Defensive code that I did not manage to trigger with an assertion
+      // (I only manage to have identical redundant/irredundant clauses).
+      // But the scheduling of deduplication is not final (it currently only
+      // triggers in the first solving before anything else), so I prefer
+      // supporting this case here.
+      if (!c->redundant && prev->redundant) {
+        make_irredundant (prev);
+      }
       mark_garbage (c);
       delete_clause (c);
       subsumed++;
@@ -253,6 +271,9 @@ void Internal::deduplicate_all_clauses () {
     } else
       prev = c;
   }
+
+  assert (!subsumed || j != mid);
+  assert (j <= i);
 
   for (; i != clauses.end (); ++i) {
     Clause *c = *i;
@@ -262,12 +283,12 @@ void Internal::deduplicate_all_clauses () {
 
   clauses.resize (j - clauses.begin ());
 
-  ++stats.deduplicatedinitrounds;
-  PHASE ("deduplicate-all", stats.deduplicatedinitrounds,
+  ++stats.deduplicate_rounds;
+  PHASE ("deduplicate-all", stats.deduplicate_rounds,
          "flushed %" PRId64 " subsumed clauses out of %zd", subsumed,
          clauses.end () - start);
   stats.subsumed += subsumed;
-  stats.deduplicatedinit += subsumed;
+  stats.deduplicate_init += subsumed;
   check_clause_stats ();
   connect_watches ();
   report ('d', !opts.reportall && !subsumed);

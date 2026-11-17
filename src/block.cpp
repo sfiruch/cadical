@@ -80,7 +80,7 @@ bool Internal::is_blocked_clause (Clause *c, int lit) {
     prev_d = d;  // backwards but remember clause at this position.
 
     LOG (d, "resolving on %d against", lit);
-    stats.blockres++;
+    stats.blocked_resolutions++;
 
     int prev_other = 0; // Previous non-tautological literal.
 
@@ -224,7 +224,7 @@ void Internal::block_schedule (Blocker &blocker) {
       if (!marked_block (lit))
         continue;
       unmark_block (lit);
-      LOG ("scheduling %d with %" PRId64 " positive and %" PRId64
+      LOG ("scheduling %d with %" PRIu64 " positive and %" PRIu64
            " negative occurrences",
            lit, noccs (lit), noccs (-lit));
       blocker.schedule.push_back (vlit (lit));
@@ -259,7 +259,7 @@ void Internal::block_pure_literal (Blocker &blocker, int lit) {
   for (const auto &c : nos)
     assert (c->garbage);
 #endif
-  stats.blockpurelits++;
+  stats.blocked_pure_literals++;
   LOG ("found pure literal %d", lit);
 #ifdef LOGGING
   int64_t pured = 0;
@@ -273,8 +273,8 @@ void Internal::block_pure_literal (Blocker &blocker, int lit) {
     if (proof) {
       proof->weaken_minus (c);
     }
-    external->push_clause_on_extension_stack (c, lit);
-    stats.blockpured++;
+    external->push_clause_on_extension (lit, c);
+    stats.blocked_pure_clauses++;
     mark_garbage (c);
 #ifdef LOGGING
     pured++;
@@ -285,7 +285,7 @@ void Internal::block_pure_literal (Blocker &blocker, int lit) {
   erase_vector (nos);
 
   mark_pure (lit);
-  stats.blockpured++;
+  stats.blocked_pure_clauses++;
   LOG ("blocking %" PRId64 " clauses on pure literal %d", pured, lit);
 }
 
@@ -409,7 +409,7 @@ void Internal::block_literal_with_one_negative_occ (Blocker &blocker,
     if (proof) {
       proof->weaken_minus (c);
     }
-    external->push_clause_on_extension_stack (c, lit);
+    external->push_clause_on_extension (lit, c);
     blocker.reschedule.push_back (c);
     mark_garbage (c);
     j--;
@@ -439,8 +439,8 @@ size_t Internal::block_candidates (Blocker &blocker, int lit) {
   Occs &pos = occs (lit); // Positive occurrences of 'lit'.
   Occs &nos = occs (-lit);
 
-  assert ((size_t) noccs (lit) <= pos.size ());
-  assert ((size_t) noccs (-lit) == nos.size ()); // Already flushed.
+  assert (noccs (lit) <= pos.size ());
+  assert (noccs (-lit) == nos.size ()); // Already flushed.
 
   // Mark all literals in clauses with '-lit'.  Note that 'mark2' uses
   // separate bits for 'lit' and '-lit'.
@@ -482,7 +482,7 @@ size_t Internal::block_candidates (Blocker &blocker, int lit) {
   else
     pos.resize (j - pos.begin ());
 
-  assert (pos.size () == (size_t) noccs (lit)); // Now also flushed.
+  assert (pos.size () == noccs (lit)); // Now also flushed.
 
   for (const auto &c : nos)
     unmark (c);
@@ -550,7 +550,7 @@ void Internal::block_literal_with_at_least_two_negative_occs (
   assert (noccs (-lit) > 1);
 
   Occs &nos = occs (-lit);
-  assert ((size_t) noccs (-lit) <= nos.size ());
+  assert (noccs (-lit) <= nos.size ());
 
   int max_size = 0;
 
@@ -571,7 +571,7 @@ void Internal::block_literal_with_at_least_two_negative_occs (
   else
     nos.resize (j - nos.begin ());
 
-  assert (nos.size () == (size_t) noccs (-lit));
+  assert (nos.size () == noccs (-lit));
   assert (nos.size () > 1);
 
   // If the maximum size of a negative clause (with '-lit') exceeds the
@@ -608,7 +608,7 @@ void Internal::block_literal_with_at_least_two_negative_occs (
     return;
   }
 
-  LOG ("trying to block %zd clauses out of %" PRId64 " with literal %d",
+  LOG ("trying to block %zd clauses out of %" PRIu64 " with literal %d",
        candidates, noccs (lit), lit);
 
   int64_t blocked = 0;
@@ -625,7 +625,7 @@ void Internal::block_literal_with_at_least_two_negative_occs (
     if (proof) {
       proof->weaken_minus (c);
     }
-    external->push_clause_on_extension_stack (c, lit);
+    external->push_clause_on_extension (lit, c);
     blocker.reschedule.push_back (c);
     mark_garbage (c);
   }
@@ -653,11 +653,11 @@ void Internal::block_reschedule_clause (Blocker &blocker, int lit,
 
   for (const auto &other : *c) {
 
-    int64_t &n = noccs (other);
+    uint64_t &n = noccs (other);
     assert (n > 0);
     n--;
 
-    LOG ("updating %d with %" PRId64 " positive and %" PRId64
+    LOG ("updating %d with %" PRIu64 " positive and %" PRIu64
          " negative occurrences",
          other, noccs (other), noccs (-other));
 
@@ -700,14 +700,14 @@ void Internal::block_literal (Blocker &blocker, int lit) {
   // If the maximum number of a negative clauses (with '-lit') exceeds the
   // occurrence limit ignore this candidate literal.
   //
-  if (noccs (-lit) > opts.blockocclim)
+  if (noccs (-lit) > (unsigned) opts.blockocclim)
     return;
 
   LOG ("blocking literal candidate %d "
-       "with %" PRId64 " positive and %" PRId64 " negative occurrences",
+       "with %" PRIu64 " positive and %" PRIu64 " negative occurrences",
        lit, noccs (lit), noccs (-lit));
 
-  stats.blockcands++;
+  stats.blocked_candidates++;
 
   assert (blocker.reschedule.empty ());
   assert (blocker.candidates.empty ());
@@ -740,10 +740,27 @@ bool Internal::block () {
     return false;
   if (unsat)
     return false;
-  if (!stats.current.irredundant)
+  if (!stats.clauses_now_irr)
     return false;
   if (terminated_asynchronously ())
     return false;
+
+  // Our current algorithm for producing the necessary clauses on the
+  // reconstruction stack for extending the witness requires a blocked
+  // literal addition step which (empirically) conflicts with flushing
+  // during restoring clauses (similar to cover).
+  // Example:
+  // on the reconstruction stack: (-3) 4 -1 -3 (1) 2 1 4 (-2) 5 -2
+  // current formula 3 -4, -3 6, 2 -5, -2 7, -3 4 2
+  // add incrementally -4, 3 (taints 3) and solve
+  // restore 4 -1 -3  (taints -1)
+  // restore 2 1 4 (skipped with '--restoreflush' due to fixed 2)
+  // reconstruction stack after restore: (-2) 5 -2
+  // solve returns satisfiable
+  // not extended model -1, 2, 3, -4, -5, 6, 7
+  // extend flips 2 due to unsatisfied 5 -2
+  // extended model -1, -2, 3, -4, -5, 6, 7 conflicts with
+  // (not restored) flushed clause 2 1 4
 
   if (propagated < trail.size ()) {
     LOG ("need to propagate %zd units first", trail.size () - propagated);
@@ -760,8 +777,8 @@ bool Internal::block () {
       return false;
   }
 
-  START_SIMPLIFIER (block, BLOCK);
-
+  MODE_SCOPE_SIMPLIFY (BLOCK);
+  PROFILE_SCOPE_SIMPLIFY (block);
   stats.blockings++;
 
   LOG ("block-%" PRId64 "", stats.blockings);
@@ -779,9 +796,9 @@ bool Internal::block () {
   block_schedule (blocker);
 
   int64_t blocked = stats.blocked;
-  int64_t resolutions = stats.blockres;
-  int64_t purelits = stats.blockpurelits;
-  int64_t pured = stats.blockpured;
+  int64_t resolutions = stats.blocked_resolutions;
+  int64_t purelits = stats.blocked_pure_literals;
+  int64_t pured = stats.blocked_pure_clauses;
 
   while (!terminated_asynchronously () && !blocker.schedule.empty ()) {
     int lit = u2i (blocker.schedule.front ());
@@ -794,18 +811,19 @@ bool Internal::block () {
   reset_noccs ();
   reset_occs ();
 
-  resolutions = stats.blockres - resolutions;
+  resolutions = stats.blocked_resolutions - resolutions;
   blocked = stats.blocked - blocked;
 
   PHASE ("block", stats.blockings,
          "blocked %" PRId64 " clauses in %" PRId64 " resolutions", blocked,
          resolutions);
 
-  pured = stats.blockpured - pured;
-  purelits = stats.blockpurelits - purelits;
+  pured = stats.blocked_pure_clauses - pured;
+  purelits = stats.blocked_pure_literals - purelits;
+  int64_t ticks = 0; // currently not counted here
 
   if (pured)
-    mark_redundant_clauses_with_eliminated_variables_as_garbage ();
+    mark_redundant_clauses_with_eliminated_variables_as_garbage (ticks);
 
   if (purelits)
     PHASE ("block", stats.blockings,
@@ -815,8 +833,6 @@ bool Internal::block () {
     PHASE ("block", stats.blockings, "no pure literals found");
 
   report ('b', !opts.reportall && !blocked);
-
-  STOP_SIMPLIFIER (block, BLOCK);
 
   return blocked;
 }

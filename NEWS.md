@@ -1,3 +1,151 @@
+Version 3.1.0
+-------------
+
+User Facing Changes:
+
+- Removed the `logsort` option (for sorting logging output) as it produced
+  issues in combination with memory fuzzing (`configure --memory ...`).
+
+- Build configuration change: `-a` and `--all` now imply `-l`, `-c`, and
+  `-s` but remain in `Release` build, i.e., the default optimizing build.
+  Before it changed the build to `Debug` build (actually as using `-g`).
+  There is further a new `-r` resp.  `--release` option which corresponds to
+  the default `Release` and thus is the opposite of `-g` or `--debug` which
+  yields a `Debug` build configuration.  The new `-s` or `--symbols` option
+  now only sets `-g` as compiler-flag not the GNU specific `-ggdb3` (supported
+  by LLVM too) anymore to include a symbol table.  That latter compiler option
+  can still be set explicitly (using also `-ggdb3` as configuration option).
+
+- We finally gave up on compressed file writing as we were not able to keep it
+  working in a multi-threaded context in a portable way. Note, that due to
+  security issues we had to use a 'fork/exec' approach (for writing) which is
+  difficult to combine with multi-threading and signal handling.  On MacOS it
+  stopped earlier to work but now also we have issues on Ubuntu and thus we
+  decided to remove that feature (and the corresponding test) completely.
+
+- Major rework of the literal importing mechanism, making it lazy everywhere.
+  Unused variables are not created anymore (more information below).
+
+- For models CaDiCaL now outputs only the literals that are present
+  in the problem. The `modelalllits` option allows to get all literals.
+
+- Walk and lucky are now fully compatible with assumptions
+  (literals propagated by the assumptions cannot be flipped anymore).
+
+- Lucky will now run if you have assumptions. For frequent incremental short
+  calls, this can be prohibitive. Use `--no-luckyassumptions` in that case as
+  follows. To limit that effect, when lucky is not effective, it will not be
+  executed for the next `luckymininterval` conflicts (and then still only at the
+  beginning of the solve call). Set this option to 0, if you want to make sure
+  that lucky is executed in each.
+
+- Lucky is now also limited in its runtime (in number of ticks per clauses).
+  Set `luckylimitpercls` to a higher value if needed. This limit is mostly
+  important for some very large instances (like
+  `baseballcover12with23_and2positions`) where lucky has a prohibitive cost.
+
+- Fixed accidental deactivation of local search initially (off by default,
+  activation with `-L`), due to a ticks limit of 0. Only noticeable if you run
+  the solver with `-L1`.
+
+- By default, all solver techniques support LRUP resolution checking (enabling
+  for instance interpolation directly). Exceptions are `factor` which requires
+  LRAT with extended resolution (and therefore does not interpolation) and
+  `cover`, `instantiate` and `vivifyinst` which all require less strict LRAT
+  checking where the antecedents subsume the learned clause.
+
+- Option '-O' accepts negative argument to decrease the amount of inprocessing.
+  Before only positive value were supported. Value '0' has no effect.
+
+- The output of the statistics has changed. `stats` now has multiple values, 0
+  (few statistics as previously), 1-3 (more statistics), 4 (all statistics,
+  similar to old default), 5 (statistics on API calls). Increasing verbosity
+  also increases the given `stats` value by that much.
+  Related to this, you can now deactivate some metrics with `./configure
+  --no-metrics`.
+
+- The `limit` and `ccadical_limit` API calls now takes a 64-bit integers as
+  argument instead of int. Only ticks, conflicts, and decisions support integers
+  larger than 32-bits. The options local search and preprocessing do not (by API
+  contract).
+
+- The option `restoreflush` has been removed, as flushing root-level satisfied
+  clauses from the reconstruction stack is not generally correct.
+
+New and Improved Techniques:
+
+- Stronger congruence algorithm by taking more binary clauses into
+  account, to produce a few more units.
+
+- Improved performance of congruence closure thanks to a new hash
+  table instead of relying on the C++ standard one.
+
+- Improved BVA (`factor`), now includes XOR and ITE factorization
+  (`factorxor[ite]`) and considers learned clauses (`factorredundant`).
+
+- New DDFW algorithm for walking. Also removed the walk based on full
+  occurrences presented at POS'26, due to its limited effect.
+
+- Equivalent literals substitution (`decompose`) now also works on frozen
+  literals: those literals are replaced (but are kept via binary clauses).
+
+- Major rework of literal import:
+
+   + The option `reverse` was renamed `varprioritizefirst`.
+
+   + The function `resize ()` does not declare the variables anymore, it only
+     reserves the space (to make allocations more efficient). The variables are
+     only declared if you use them (either by adding them or by some other API
+     operation like observe ()). This means that the behavior does not change
+     anymore by calling resize with more variables than expected.
+
+   + Variable names do not have to be kept anymore internally. There are two
+     options controlling the behavior: (i) `varindexorder` uses the order given
+     by the input with potentially a different name and (ii) `varkeepname`
+     attempts to keep the names given by the input (mostly useful for
+     debugging). The order of decision is controlled by `varprioritizefirst`
+     (first imported variable = first decision).
+
+- Major rework of the reconstruction stack:
+  
+  + Improved performance of restoration and extension by separating clause data
+    from witness data.
+
+  + Multiple clauses can now share the same witness cube.
+
+  + Added the option `restoredefraglim` to control when clause data is 
+    defragmented.
+
+- Major improvements to mobical:
+
+  + Deterministic replaying of traces with user propagator.
+
+  + Statistic summary of mobical runs (`--summary`).
+
+  + API contract fuzzing with `./configure --except-contracts`
+    and `mobical --violate`.
+  
+Developer only:
+
+- We introduced two new options (`elimaggressiveGC` and `walkbinarylimit`) that
+  are debug only. There are just useful to trigger more behaviors from
+  mobical. The effect is debug only, even if the options exists during in
+  release mode for mobical to behave the same.
+
+
+Version 3.0.1
+-------------
+
+- Less disruptive clause import with user propagators due to `elevate`.
+
+- Changed default value for `preprocesslight` and `factor` to zero (off).
+  Note that disabling `factor` by default means you now only have to declare
+  variables when enabling factor explicitly.
+
+- Improved external terminator reaction time.
+
+- Changed application signal handler to properly terminate the solver.
+
 Version 3.0.0
 -------------
 

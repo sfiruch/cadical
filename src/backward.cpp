@@ -36,7 +36,6 @@ Eliminator::~Eliminator () {
 }
 
 /*------------------------------------------------------------------------*/
-
 void Internal::elim_backward_clause (Eliminator &eliminator, Clause *c) {
   assert (opts.elimbackward);
   assert (!c->redundant);
@@ -114,12 +113,13 @@ void Internal::elim_backward_clause (Eliminator &eliminator, Clause *c) {
           elim_update_removed_clause (eliminator, d);
           mark_garbage (d);
           stats.subsumed++;
-          stats.elimbwsub++;
+          stats.eliminate_subsumed_bw++;
         } else {
           int unit = 0;
           assert (minimize_chain.empty ());
           assert (analyzed.empty ());
           assert (lrat_chain.empty ());
+          ++eliminator.ticks;
           // figure out wether we strengthen c or get a new unit
           for (const auto &lit : *d) {
             const signed char tmp = val (lit);
@@ -197,7 +197,7 @@ void Internal::elim_backward_clause (Eliminator &eliminator, Clause *c) {
             strengthen_clause (d, negated);
             remove_occs (occs (negated), d);
             elim_update_removed_lit (eliminator, negated);
-            stats.elimbwstr++;
+            stats.eliminate_strength_bw++;
             assert (negated != best);
             eliminator.enqueue (d);
           }
@@ -217,13 +217,12 @@ void Internal::elim_backward_clauses (Eliminator &eliminator) {
     assert (eliminator.backward.empty ());
     return;
   }
-  START (backward);
+  PROFILE_SCOPE (backward);
   LOG ("attempting backward subsumption and strengthening with %zd clauses",
        eliminator.backward.size ());
   Clause *c;
   while (!unsat && (c = eliminator.dequeue ()))
     elim_backward_clause (eliminator, c);
-  STOP (backward);
 }
 
 /*------------------------------------------------------------------------*/

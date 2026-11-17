@@ -10,10 +10,17 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
+#ifndef DllExport
 #define DllExport __declspec(dllexport)
+#endif
 // C wrapper for CaDiCaL's C++ API following IPASIR.
 
 typedef struct CCaDiCaL CCaDiCaL;
+
+struct COption {
+  const char *name;
+  int def, lo, hi;
+};
 
 DllExport const char *ccadical_signature (void);
 DllExport CCaDiCaL *ccadical_init (void);
@@ -30,7 +37,12 @@ DllExport void ccadical_set_terminate (CCaDiCaL *, void *state,
 
 DllExport void ccadical_set_learn (CCaDiCaL *, void *state, int max_length,
                          void (*learn) (void *state, int *clause));
+DllExport void ccadical_set_learn2 (CCaDiCaL *, void *state, int max_length,
+                          void (*learn) (void *state, int32_t const *clause,
+                                         int, void *));
 
+DllExport void ccadical_set_fixed_listener (CCaDiCaL *ptr, void *state,
+                                  void (*fixed) (void *state, int fixed));
 /*------------------------------------------------------------------------*/
 
 // Non-IPASIR conformant 'C' functions.
@@ -38,7 +50,8 @@ DllExport void ccadical_set_learn (CCaDiCaL *, void *state, int max_length,
 DllExport void ccadical_constrain (CCaDiCaL *, int lit);
 DllExport int ccadical_constraint_failed (CCaDiCaL *);
 DllExport void ccadical_set_option (CCaDiCaL *, const char *name, int val);
-DllExport void ccadical_limit (CCaDiCaL *, const char *name, int limit);
+DllExport struct COption *ccadical_options (CCaDiCaL *wrapper, size_t *len);
+DllExport void ccadical_limit (CCaDiCaL *, const char *name, int64_t limit);
 DllExport int ccadical_get_option (CCaDiCaL *, const char *name);
 DllExport void ccadical_print_statistics (CCaDiCaL *);
 DllExport int64_t ccadical_active (CCaDiCaL *);

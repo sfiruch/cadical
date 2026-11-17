@@ -7,7 +7,7 @@ void Internal::constrain (int lit) {
     constraint.push_back (lit);
   else {
     if (level)
-      backtrack ();
+      backtrack_without_updating_phases ();
     LOG (constraint, "shrinking constraint");
     bool satisfied_constraint = false;
     const vector<int>::const_iterator end = constraint.end ();
@@ -50,7 +50,15 @@ void Internal::constrain (int lit) {
   }
 }
 
-bool Internal::failed_constraint () { return unsat_constraint; }
+bool Internal::failed_constraint () {
+  if (!marked_failed) {
+    if (!conflict_id)
+      failing ();
+    marked_failed = true;
+  }
+  conclude_unsat ();
+  return unsat_constraint;
+}
 
 void Internal::reset_constraint () {
   for (auto lit : constraint)

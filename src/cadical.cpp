@@ -21,7 +21,7 @@ namespace CaDiCaL {
 
 /*------------------------------------------------------------------------*/
 
-class App : public Handler, public Terminator {
+class App : public Handler {
 
   Solver *solver; // Global solver.
 
@@ -47,9 +47,8 @@ class App : public Handler, public Terminator {
 
   // Internal variables.
   //
-  int max_var;           // Set after parsing.
-  volatile bool timesup; // Asynchronous termination.
-
+  int max_var;                        // Set after parsing.
+  volatile sig_atomic_t signal_value; // Caught signal.
   // Printing.
   //
   void print_usage (bool all = false);
@@ -71,10 +70,6 @@ class App : public Handler, public Terminator {
   // The actual initialization.
   //
   void init ();
-
-  // Terminator interface.
-  //
-  bool terminate () { return timesup; }
 
   // Handler interface.
   //
@@ -268,26 +263,72 @@ void App::print_usage (bool all) {
 // Pretty print competition format witness with 'v' lines.
 
 void App::print_witness (FILE *file) {
-  int c = 0, i = 0, tmp;
-  do {
-    if (!c)
-      fputc ('v', file), c = 1;
-    if (i++ == max_var)
-      tmp = 0;
-    else if (solver->external->ervars[i])
-      continue;
-    else
-      tmp = solver->val (i) < 0 ? -i : i;
-    char str[32];
-    snprintf (str, sizeof str, " %d", tmp);
-    int l = strlen (str);
-    if (c + l > 78)
-      fputs ("\nv", file), c = 1;
-    fputs (str, file);
-    c += l;
-  } while (tmp);
+  int c = 0, tmp = 0;
+  if (solver->internal->opts.modelalllits) {
+    for (auto elit = 1; elit <= solver->external->max_var; ++elit) {
+      if (!c)
+        fputc ('v', file), c = 1;
+      if (solver->external->ervars[elit])
+        tmp = elit;
+      else
+        tmp = solver->val (elit) < 0 ? -elit : elit;
+      if (signal_value)
+        break;
+      char str[32];
+      snprintf (str, sizeof str, " %d", tmp);
+      int l = strlen (str);
+      if (c + l > 78)
+        fputs ("\nv", file), c = 1;
+      fputs (str, file);
+      c += l;
+    }
+  } else {
+    if (solver->external->e2i.use_hash_map) {
+      for (auto eilit : solver->external->e2i.h_e2i) {
+        const int elit = eilit.first;
+        if (!c)
+          fputc ('v', file), c = 1;
+        if (!elit) // the hash-table can contain stall entries
+          continue;
+        assert (elit);
+        if (solver->external->ervars[elit])
+          continue;
+        else
+          tmp = solver->val (elit) < 0 ? -elit : elit;
+        solver->internal->terminated_asynchronously ();
+        char str[32];
+        snprintf (str, sizeof str, " %d", tmp);
+        int l = strlen (str);
+        if (c + l > 78)
+          fputs ("\nv", file), c = 1;
+        fputs (str, file);
+        c += l;
+      }
+    } else {
+      for (size_t i = 1; i < solver->external->e2i.vec_e2i.table.size ();
+           ++i) {
+        auto eilit = std::pair<int, int> (i, solver->external->e2i[i]);
+        const int elit = eilit.first;
+        if (!c)
+          fputc ('v', file), c = 1;
+        assert (elit);
+        if (solver->external->ervars[elit])
+          continue;
+        else
+          tmp = solver->val (elit) < 0 ? -elit : elit;
+        solver->internal->terminated_asynchronously ();
+        char str[32];
+        snprintf (str, sizeof str, " %d", tmp);
+        int l = strlen (str);
+        if (c + l > 78)
+          fputs ("\nv", file), c = 1;
+        fputs (str, file);
+        c += l;
+      }
+    }
+  }
   if (c)
-    fputc ('\n', file);
+    fputs (" 0\n", file);
 }
 
 /*------------------------------------------------------------------------*/
@@ -397,6 +438,25 @@ int App::main (int argc, char **argv) {
     if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help") ||
         !strcmp (argv[i], "--build") || !strcmp (argv[i], "--version") ||
         !strcmp (argv[i], "--copyright")) {
+      if (!strcmp (argv[i], "-h")) {
+        print_usage ();
+        return 0;
+      } else if (!strcmp (argv[i], "--help")) {
+        print_usage (true);
+        return 0;
+      } else if (!strcmp (argv[i], "--version")) {
+        printf ("%s\n", CaDiCaL::version ());
+        return 0;
+      } else if (!strcmp (argv[i], "--build")) {
+        tout.disable ();
+        Solver::build (stdout, "");
+        return 0;
+      } else if (!strcmp (argv[i], "--copyright")) {
+        printf ("%s\n", copyright ());
+        printf ("%s\n", authors ());
+        printf ("%s\n", affiliations ());
+        return 0;
+      }
       APPERR ("can only use '%s' as single first option", argv[i]);
     } else if (!strcmp (argv[i], "-")) {
       if (proof_specified)
@@ -482,7 +542,7 @@ int App::main (int argc, char **argv) {
       else if (conflict_limit_specified)
         APPERR ("multiple conflict limits '-c %s' and '-c %s'",
                 conflict_limit_specified, argv[i]);
-      else if (!parse_int_str (argv[i], conflict_limit))
+      else if (!parse_int_str (argv[i], conflict_limit, true))
         APPERR ("invalid argument in '-c %s'", argv[i]);
       else if (conflict_limit < 0)
         APPERR ("invalid conflict limit");
@@ -494,7 +554,7 @@ int App::main (int argc, char **argv) {
       else if (decision_limit_specified)
         APPERR ("multiple decision limits '-d %s' and '-d %s'",
                 decision_limit_specified, argv[i]);
-      else if (!parse_int_str (argv[i], decision_limit))
+      else if (!parse_int_str (argv[i], decision_limit, true))
         APPERR ("invalid argument in '-d %s'", argv[i]);
       else if (decision_limit < 0)
         APPERR ("invalid decision limit");
@@ -508,7 +568,7 @@ int App::main (int argc, char **argv) {
       else if (time_limit_specified)
         APPERR ("multiple time limit '-t %s' and '-t %s'",
                 time_limit_specified, argv[i]);
-      else if (!parse_int_str (argv[i], time_limit))
+      else if (!parse_int_str (argv[i], time_limit, true))
         APPERR ("invalid argument in '-d %s'", argv[i]);
       else if (time_limit < 0)
         APPERR ("invalid time limit");
@@ -529,7 +589,8 @@ int App::main (int argc, char **argv) {
     else if (!strcmp (argv[i], "-f") || !strcmp (argv[i], "--force") ||
              !strcmp (argv[i], "--force=1") ||
              !strcmp (argv[i], "--force=true"))
-      force_strict_parsing = 0, force_writing = true;
+      force_strict_parsing = 0, force_writing = true,
+      solver->set ("factorcheck", 0);
     else if (!strcmp (argv[i], "--strict") ||
              !strcmp (argv[i], "--strict=1") ||
              !strcmp (argv[i], "--strict=true"))
@@ -539,16 +600,16 @@ int App::main (int argc, char **argv) {
         APPERR ("multiple optimization options '%s' and '%s'",
                 optimization_specified, argv[i]);
       optimization_specified = argv[i];
-      if (!parse_int_str (argv[i] + 2, optimize))
+      if (!parse_int_str (argv[i] + 2, optimize, true))
         APPERR ("invalid optimization option '%s'", argv[i]);
-      if (optimize < 0 || optimize > 31)
-        APPERR ("invalid argument in '%s' (expected '0..31')", argv[i]);
+      if (optimize < -31 || optimize > 31)
+        APPERR ("invalid argument in '%s' (expected '-31..31')", argv[i]);
     } else if (has_prefix (argv[i], "-P")) {
       if (preprocessing_specified)
         APPERR ("multiple preprocessing options '%s' and '%s'",
                 preprocessing_specified, argv[i]);
       preprocessing_specified = argv[i];
-      if (!parse_int_str (argv[i] + 2, preprocessing))
+      if (!parse_int_str (argv[i] + 2, preprocessing, true))
         APPERR ("invalid preprocessing option '%s'", argv[i]);
       if (preprocessing < 0)
         APPERR ("invalid argument in '%s' (expected non-negative number)",
@@ -558,7 +619,7 @@ int App::main (int argc, char **argv) {
         APPERR ("multiple local search options '%s' and '%s'",
                 localsearch_specified, argv[i]);
       localsearch_specified = argv[i];
-      if (!parse_int_str (argv[i] + 2, localsearch))
+      if (!parse_int_str (argv[i] + 2, localsearch, true))
         APPERR ("invalid local search option '%s'", argv[i]);
       if (localsearch < 0)
         APPERR ("invalid argument in '%s' (expected non-negative number)",
@@ -657,7 +718,6 @@ int App::main (int argc, char **argv) {
           "setting time limit to %d seconds real time (due to '-t %s')",
           time_limit, time_limit_specified);
       Signal::alarm (time_limit);
-      solver->connect_terminator (this);
     }
 #endif
     if (conflict_limit >= 0) {
@@ -714,10 +774,15 @@ int App::main (int argc, char **argv) {
   if (dimacs_path)
     err = solver->read_dimacs (dimacs_path, max_var, force_strict_parsing,
                                incremental, cube_literals);
-  else
+  else {
+    // Otherwise we may catch a SIGINT and continue to wait for an user
+    // input in getc.
+    Signal::reset ();
     err = solver->read_dimacs (stdin, dimacs_name, max_var,
                                force_strict_parsing, incremental,
                                cube_literals);
+    Signal::set (this);
+  }
   if (err)
     APPERR ("%s", err);
   if (read_solution_path) {
@@ -728,7 +793,7 @@ int App::main (int argc, char **argv) {
   }
 
   solver->section ("options");
-  if (optimize > 0) {
+  if (optimize) {
     solver->optimize (optimize);
     solver->message ();
   }
@@ -841,8 +906,6 @@ int App::main (int argc, char **argv) {
         } else {
           assert (!res);
           inconclusive++;
-          if (timesup)
-            break;
         }
         cube.clear ();
       }
@@ -899,6 +962,7 @@ int App::main (int argc, char **argv) {
     solver->message ("writing result to '%s'", write_result_path);
   }
 
+  assert (write_result_file);
   if (res == 10) {
     if (status)
       fputs ("s SATISFIABLE\n", write_result_file);
@@ -915,12 +979,16 @@ int App::main (int argc, char **argv) {
   solver->resources ();
   solver->section ("shutting down");
   solver->message ("exit %d", res);
-  if (!res && timesup)
+#ifndef QUIET
+  if (!res && Signal::received () == SIGALRM && !solver->get ("quiet")) {
     fputs ("c Timeout reached! 😅 This instance is a real thinker.\n"
            "c 🚧 🚧 🚧 Please consider contributing it to the page\n"
            "c https://mysolvertimesout.org/#sat in order to improve\n"
            "c automated reasoning. 🚧 🚧 🚧\n",
            write_result_file);
+    fflush (write_result_file);
+  }
+#endif
   if (less_pipe) {
     close (1);
     pclose (less_pipe);
@@ -929,6 +997,14 @@ int App::main (int argc, char **argv) {
   if (time_limit > 0)
     alarm (0);
 #endif
+
+  if (signal_value) {
+    CaDiCaL::Signal::reset ();
+#ifndef QUIET
+    signal_message ("raising", signal_value);
+#endif
+    raise (signal_value);
+  }
 
   return res;
 }
@@ -947,8 +1023,8 @@ void App::init () {
   force_strict_parsing = 1;
   force_writing = false;
   max_var = 0;
-  timesup = false;
 
+#if !defined(NOPTIONS)
   // Call 'new Solver' only after setting 'reportdefault' and do not
   // add this call to the member initialization above. This is because for
   // stand-alone usage the default report default value is 'true' while for
@@ -956,13 +1032,21 @@ void App::init () {
   // 'options.hpp' related to 'reportdefault' for details.
 
   CaDiCaL::Options::reportdefault = 1;
+#endif
   solver = new Solver ();
   Signal::set (this);
 }
 
 /*------------------------------------------------------------------------*/
 
-App::App () : solver (0) {} // Only partially initialize the app.
+App::App ()
+    : solver (0),
+#ifndef _WIN32
+      time_limit (-1),
+#endif
+      force_strict_parsing (false), force_writing (false), max_var (0),
+      signal_value (0) {
+} // Only partially initialize the app.
 
 App::~App () {
   if (!solver)
@@ -984,29 +1068,13 @@ void App::signal_message (const char *msg, int sig) {
 #endif
 
 void App::catch_signal (int sig) {
-#ifndef QUIET
-  if (!get ("quiet")) {
-    solver->message ();
-    signal_message ("caught", sig);
-    solver->section ("result");
-    solver->message ("UNKNOWN");
-    solver->statistics ();
-    solver->resources ();
-    solver->message ();
-    signal_message ("raising", sig);
-  }
-#else
-  (void) sig;
-#endif
+  signal_value = sig;   // Store copy to re-raise signal in main
+  solver->terminate (); // Immediate asynchronous call into solver.
+  Signal::reset ();     // Use the first signal caught only
 }
 
 void App::catch_alarm () {
-  // Both approaches work. We keep them here for illustration purposes.
-#if 0 // THIS IS AN ALTERNATIVE WE WANT TO KEEP AROUND.
   solver->terminate (); // Immediate asynchronous call into solver.
-#else
-  timesup = true; // Wait for solver to call 'App::terminate ()'.
-#endif
 }
 
 } // namespace CaDiCaL
@@ -1022,6 +1090,14 @@ void App::catch_alarm () {
 int main (int argc, char **argv) {
   pal_init ();
   CaDiCaL::App app;
+
   int res = app.main (argc, argv);
+  const int sig = CaDiCaL::Signal::received ();
+
+  if (sig) {
+    CaDiCaL::Signal::reset (); // Disconnects signal handler
+    raise (sig);
+  }
+
   return res;
 }

@@ -62,7 +62,7 @@ inline void Internal::cover_push_extension (int lit, Coveror &coveror) {
 // Successful covered literal addition (CLA) step.
 
 inline void Internal::covered_literal_addition (int lit, Coveror &coveror) {
-  require_mode (COVER);
+  MODE_REQUIRE (COVER);
   assert (level == 1);
   cover_push_extension (lit, coveror);
   for (const auto &other : coveror.intersection) {
@@ -80,7 +80,7 @@ inline void Internal::covered_literal_addition (int lit, Coveror &coveror) {
 
 inline void Internal::asymmetric_literal_addition (int lit,
                                                    Coveror &coveror) {
-  require_mode (COVER);
+  MODE_REQUIRE (COVER);
   assert (level == 1);
   LOG ("initial asymmetric literal addition %d", lit);
   assert (!vals[lit]), assert (!vals[-lit]);
@@ -99,8 +99,9 @@ inline void Internal::asymmetric_literal_addition (int lit,
 
 bool Internal::cover_propagate_asymmetric (int lit, Clause *ignore,
                                            Coveror &coveror) {
-  require_mode (COVER);
-  stats.propagations.cover++;
+  MODE_REQUIRE (COVER);
+  stats.propagations_cover++;
+  stats.propagations++;
   assert (val (lit) < 0);
   bool subsumed = false;
   LOG ("asymmetric literal propagation of %d", lit);
@@ -179,7 +180,7 @@ bool Internal::cover_propagate_asymmetric (int lit, Clause *ignore,
 // function returns 'true' if the extended clause is blocked on 'lit.'
 
 bool Internal::cover_propagate_covered (int lit, Coveror &coveror) {
-  require_mode (COVER);
+  MODE_REQUIRE (COVER);
 
   assert (val (lit) < 0);
   if (frozen (lit)) {
@@ -187,7 +188,8 @@ bool Internal::cover_propagate_covered (int lit, Coveror &coveror) {
     return false;
   }
 
-  stats.propagations.cover++;
+  stats.propagations_cover++;
+  stats.propagations++;
 
   LOG ("covered propagation of %d", lit);
   assert (coveror.intersection.empty ());
@@ -322,7 +324,7 @@ bool Internal::cover_propagate_covered (int lit, Coveror &coveror) {
 
 bool Internal::cover_clause (Clause *c, Coveror &coveror) {
 
-  require_mode (COVER);
+  MODE_REQUIRE (COVER);
   assert (!c->garbage);
 
   LOG (c, "trying covered clauses elimination on");
@@ -368,12 +370,12 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
 
   if (tautological) {
     if (coveror.extend.empty ()) {
-      stats.cover.asymmetric++;
-      stats.cover.total++;
+      stats.cover_asymmetric++;
+      stats.cover_total++;
       LOG (c, "asymmetric tautological");
     } else {
-      stats.cover.blocked++;
-      stats.cover.total++;
+      stats.cover_blocked++;
+      stats.cover_total++;
       // Only copy extension stack if successful.
       int prev = INT_MIN;
       bool already_pushed = false;
@@ -381,6 +383,9 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
       LOG (c, "covered tautological");
       assert (clause.empty ());
       LOG (coveror.extend, "extension = ");
+      std::vector<int> weakened_clause;
+      int witness = 0;
+      int64_t weakened_id = 0;
       for (const auto &other : coveror.extend) {
         if (!prev) {
           // are we finishing a clause?
@@ -394,7 +399,7 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
                 --j;
                 LOG ("adding lit %d not needed for ATA", lit);
                 clause.push_back (lit);
-                external->push_clause_literal_on_extension_stack (lit);
+                weakened_clause.push_back (lit);
               }
             }
           }
@@ -407,16 +412,19 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
             lrat_chain.clear ();
           }
           last_id = ++clause_id;
-          external->push_zero_on_extension_stack ();
-          external->push_witness_literal_on_extension_stack (other);
-          external->push_zero_on_extension_stack ();
-          external->push_id_on_extension_stack (last_id);
-          external->push_zero_on_extension_stack ();
+          if (already_pushed)
+            external->push_clause_on_extension (weakened_id, witness,
+                                                weakened_clause);
+          assert (other);
+          witness = other;
+          weakened_clause.clear ();
+          weakened_id = last_id;
+
           clause.clear ();
           already_pushed = true;
         }
         if (other) {
-          external->push_clause_literal_on_extension_stack (other);
+          weakened_clause.push_back (other);
           clause.push_back (other);
           LOG (clause, "current clause is");
         }
@@ -433,7 +441,7 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
             --j;
             LOG ("adding lit %d not needed for ATA", lit);
             clause.push_back (lit);
-            external->push_clause_literal_on_extension_stack (lit);
+            weakened_clause.push_back (lit);
           }
         }
         if (lrat)
@@ -443,6 +451,8 @@ bool Internal::cover_clause (Clause *c, Coveror &coveror) {
         lrat_chain.clear ();
       }
       clause.clear ();
+      external->push_clause_on_extension (weakened_id, witness,
+                                          weakened_clause);
 
       mark_garbage (c);
     }
@@ -484,7 +494,7 @@ int64_t Internal::cover_round () {
   init_watches ();
   connect_watches (true); // irredundant watches only is enough
 
-  int64_t delta = stats.propagations.search;
+  int64_t delta = stats.propagations_search;
   delta *= 1e-3 * opts.covereffort;
   if (delta < opts.covermineff)
     delta = opts.covermineff;
@@ -492,11 +502,11 @@ int64_t Internal::cover_round () {
     delta = opts.covermaxeff;
   delta = max (delta, ((int64_t) 2) * active ());
 
-  PHASE ("cover", stats.cover.count,
+  PHASE ("cover", stats.coverings,
          "covered clause elimination limit of %" PRId64 " propagations",
          delta);
 
-  int64_t limit = stats.propagations.cover + delta;
+  int64_t limit = stats.propagations_cover + delta;
 
   init_occs ();
 
@@ -546,7 +556,7 @@ int64_t Internal::cover_round () {
 
   if (schedule.empty ()) {
 
-    PHASE ("cover", stats.cover.count, "no previously untried clause left");
+    PHASE ("cover", stats.coverings, "no previously untried clause left");
 
     for (auto c : clauses) {
       if (c->garbage)
@@ -591,9 +601,9 @@ int64_t Internal::cover_round () {
 
 #ifndef QUIET
   const size_t scheduled = schedule.size ();
-  PHASE ("cover", stats.cover.count,
+  PHASE ("cover", stats.coverings,
          "scheduled %zd clauses %.0f%% with %" PRId64 " untried %.0f%%",
-         scheduled, percent (scheduled, stats.current.irredundant), untried,
+         scheduled, percent (scheduled, stats.clauses_now_irr), untried,
          percent (untried, scheduled));
 #endif
 
@@ -613,7 +623,7 @@ int64_t Internal::cover_round () {
   int64_t covered = 0;
   //
   while (!terminated_asynchronously () && !schedule.empty () &&
-         stats.propagations.cover < limit) {
+         stats.propagations_cover < limit) {
     Clause *c = schedule.back ();
     schedule.pop_back ();
     c->covered = true;
@@ -624,15 +634,14 @@ int64_t Internal::cover_round () {
 #ifndef QUIET
   const size_t remain = schedule.size ();
   const size_t tried = scheduled - remain;
-  PHASE ("cover", stats.cover.count,
+  PHASE ("cover", stats.coverings,
          "eliminated %" PRId64 " covered clauses out of %zd tried %.0f%%",
          covered, tried, percent (covered, tried));
   if (remain)
-    PHASE ("cover", stats.cover.count,
-           "remaining %zu clauses %.0f%% untried", remain,
-           percent (remain, scheduled));
+    PHASE ("cover", stats.coverings, "remaining %zu clauses %.0f%% untried",
+           remain, percent (remain, scheduled));
   else
-    PHASE ("cover", stats.cover.count, "all scheduled clauses tried");
+    PHASE ("cover", stats.coverings, "all scheduled clauses tried");
 #endif
   reset_occs ();
   reset_watches ();
@@ -650,7 +659,7 @@ bool Internal::cover () {
     return false;
   if (terminated_asynchronously ())
     return false;
-  if (!stats.current.irredundant)
+  if (!stats.clauses_now_irr)
     return false;
 
   // TODO: Our current algorithm for producing the necessary clauses on the
@@ -664,12 +673,12 @@ bool Internal::cover () {
   // infrequent (one out of half billion mobical test cases) but as the two
   // regression traces show, does happen. Thus we disable the combination.
   //
-  if (opts.restoreflush)
-    return false;
+  // if (opts.restoreflush)
+  //   return false;
 
-  START_SIMPLIFIER (cover, COVER);
-
-  stats.cover.count++;
+  MODE_SCOPE_SIMPLIFY (COVER);
+  PROFILE_SCOPE_SIMPLIFY (cover);
+  stats.coverings++;
 
   // During variable elimination unit clauses can be generated which need to
   // be propagated properly over redundant clauses too.  Since variable
@@ -694,10 +703,7 @@ bool Internal::cover () {
   assert (unsat || propagated == trail.size ());
 
   int64_t covered = cover_round ();
-
-  STOP_SIMPLIFIER (cover, COVER);
-  report ('c', !opts.reportall && !covered);
-
+  report ('K', !opts.reportall && !covered);
   return covered;
 }
 

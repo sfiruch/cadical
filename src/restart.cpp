@@ -24,32 +24,32 @@ bool Internal::stabilizing () {
     assert (!stable);
     if (stats.conflicts <= lim.stabilize)
       return false;
-  } else if (stats.ticks.search[stable] <= lim.stabilize)
+  } else if ((stable && stats.ticks_search_stable <= lim.stabilize) ||
+             (!stable && stats.ticks_search_unstable <= lim.stabilize))
     return stable;
   report (stable ? ']' : '}');
-  if (stable)
-    STOP (stable);
-  else
-    STOP (unstable);
+  PROFILE_SCOPE_SEARCH_STABILIZE ();
 
   assert (last.stabilize.ticks >= 0);
   assert (last.stabilize.conflicts >= 0 &&
           last.stabilize.conflicts <= stats.conflicts);
-  assert (last.stabilize.ticks <= stats.ticks.search[stable]);
   const int64_t delta_ticks =
-      stats.ticks.search[stable] - last.stabilize.ticks;
+      stable ? stats.ticks_search_stable - last.stabilize.ticks
+             : stats.ticks_search_unstable - last.stabilize.ticks;
+  assert (delta_ticks >= 0);
 #ifndef QUIET
   const int64_t delta_conflicts =
       stats.conflicts - last.stabilize.conflicts;
   const char *current_mode = stable ? "stable" : "unstable";
   const char *next_mode = stable ? "unstable" : "stable";
 #endif
-  PHASE ("stabilizing", stats.stabphases,
+  PHASE ("stabilizing", stats.stable_phases_total,
          "reached %s stabilization limit %" PRId64 " after %" PRId64
          " conflicts and %" PRId64 " ticks at %" PRId64
          " conflicts and %" PRId64 " ticks",
          current_mode, lim.stabilize, delta_conflicts, delta_ticks,
-         stats.conflicts, stats.ticks.search[stable]);
+         stats.conflicts,
+         stable ? stats.ticks_search_stable : stats.ticks_search_unstable);
   if (!inc.stabilize)
     inc.stabilize = delta_ticks;
   if (!inc.stabilize) // rare occurence in incremental calls requiring no
@@ -57,15 +57,18 @@ bool Internal::stabilizing () {
     inc.stabilize = 1;
 
   int64_t next_delta_ticks = inc.stabilize;
-  int64_t stabphases = stats.stabphases + 1;
+  int64_t stabphases = stats.stable_phases_current + 1;
   next_delta_ticks *= stabphases * stabphases;
 
-  const bool next_stable = !stable;
-  lim.stabilize = stats.ticks.search[next_stable] + next_delta_ticks;
-  last.stabilize.ticks = stats.ticks.search[next_stable];
-  if (lim.stabilize <= stats.ticks.search[next_stable])
-    lim.stabilize = stats.ticks.search[next_stable] + 1;
-  PHASE ("stabilizing", stats.stabphases,
+  lim.stabilize = next_delta_ticks;
+  if (lim.stabilize < 1)
+    lim.stabilize = 1;
+  lim.stabilize +=
+      !stable ? stats.ticks_search_stable : stats.ticks_search_unstable;
+  last.stabilize.ticks =
+      !stable ? stats.ticks_search_stable : stats.ticks_search_unstable;
+
+  PHASE ("stabilizing", stats.stable_phases_total,
          "next %s stabilization limit %" PRId64
          " at ticks interval %" PRId64,
          next_mode, lim.stabilize, next_delta_ticks);
@@ -73,14 +76,10 @@ bool Internal::stabilizing () {
   stable = !stable; // Switch!!!!!
 
   if (stable)
-    stats.stabphases++;
+    ++stats.stable_phases_total, ++stats.stable_phases_current;
 
   swap_averages ();
   report (stable ? '[' : '{');
-  if (stable)
-    START (stable);
-  else
-    START (unstable);
   return stable;
 }
 
@@ -152,27 +151,26 @@ int Internal::reuse_trail () {
   int reused = res - trivial_decisions;
   if (reused > 0) {
     stats.reused++;
-    stats.reusedlevels += reused;
+    stats.reused_levels += reused;
     if (stable)
-      stats.reusedstable++;
+      stats.reused_stable++;
   }
   return res;
 }
 
 void Internal::restart () {
-  START (restart);
-  stats.restarts++;
-  stats.restartlevels += level;
+  PROFILE_SCOPE (restart);
+  stats.restart++;
+  stats.restart_levels += level;
   if (stable)
-    stats.restartstable++;
-  LOG ("restart %" PRId64 "", stats.restarts);
+    stats.restart_stable++;
+  LOG ("restart %" PRId64 "", stats.restart);
   backtrack (reuse_trail ());
 
   lim.restart = stats.conflicts + opts.restartint;
   LOG ("new restart limit at %" PRId64 " conflicts", lim.restart);
 
   report ('R', 2);
-  STOP (restart);
 }
 
 } // namespace CaDiCaL

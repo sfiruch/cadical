@@ -14,7 +14,7 @@ namespace CaDiCaL {
 bool Internal::reducing () {
   if (!opts.reduce)
     return false;
-  if (!stats.current.redundant)
+  if (!stats.clauses_now_red)
     return false;
   return stats.conflicts >= lim.reduce;
 }
@@ -50,9 +50,9 @@ void Internal::mark_clauses_to_be_flushed () {
       continue;
     mark_garbage (c); // flush unused clauses
     if (c->hyper)
-      stats.flush.hyper++;
+      stats.flush_hyper++;
     else
-      stats.flush.learned++;
+      stats.flush_learned++;
   }
   // No change to 'lim.kept{size,glue}'.
 }
@@ -97,7 +97,7 @@ void Internal::mark_useless_redundant_clauses_as_garbage () {
   const int tier1limit = tier1[false];
   const int tier2limit = max (tier1limit, tier2[false]);
 
-  stack.reserve (stats.current.redundant);
+  stack.reserve (stats.clauses_now_red);
 
   for (const auto &c : clauses) {
     if (!c->redundant)
@@ -133,7 +133,7 @@ void Internal::mark_useless_redundant_clauses_as_garbage () {
     target = stack.size ();
 
   PHASE ("reduce", stats.reductions, "reducing %zd clauses %.0f%%", target,
-         percent (target, stats.current.redundant));
+         percent (target, stats.clauses_now_red));
 
   auto i = stack.begin ();
   const auto t = i + target;
@@ -173,7 +173,7 @@ bool Internal::propagate_out_of_order_units () {
   if (!level)
     return true;
   int oou = 0;
-  for (size_t i = control[1].trail; !oou && i < trail.size (); i++) {
+  for (int i = control[1].trail; !oou && i < get_trail_size (); i++) {
     const int lit = trail[i];
     assert (val (lit) > 0);
     if (var (lit).level)
@@ -183,7 +183,6 @@ bool Internal::propagate_out_of_order_units () {
   }
   if (!oou)
     return true;
-  assert (opts.chrono || external_prop || did_external_prop);
   backtrack (0);
   if (propagate ())
     return true;
@@ -211,14 +210,14 @@ bool Internal::propagate_out_of_order_units () {
 // clauses in the solver. This impact will decrease over time.
 
 void Internal::reduce () {
-  START (reduce);
+  PROFILE_SCOPE (reduce);
 
   stats.reductions++;
   report ('.', 1);
 
   bool flush = flushing ();
   if (flush)
-    stats.flush.count++;
+    stats.flushings++;
 
   if (!propagate_out_of_order_units ())
     goto DONE;
@@ -259,11 +258,11 @@ void Internal::reduce () {
   }
 
   if (flush) {
-    PHASE ("flush", stats.flush.count, "new flush increment %" PRId64 "",
+    PHASE ("flush", stats.flushings, "new flush increment %" PRId64 "",
            inc.flush);
     inc.flush *= opts.flushfactor;
     lim.flush = stats.conflicts + inc.flush;
-    PHASE ("flush", stats.flush.count, "new flush limit %" PRId64 "",
+    PHASE ("flush", stats.flushings, "new flush limit %" PRId64 "",
            lim.flush);
   }
 
@@ -272,7 +271,6 @@ void Internal::reduce () {
 DONE:
 
   report (flush ? 'f' : '-');
-  STOP (reduce);
 }
 
 } // namespace CaDiCaL

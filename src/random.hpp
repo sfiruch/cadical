@@ -1,6 +1,7 @@
 #ifndef _random_hpp_INCLUDED
 #define _random_hpp_INCLUDED
 
+#include <cassert>
 #include <cstdint>
 
 // Random number generator.
@@ -38,7 +39,7 @@ public:
 
   uint32_t generate () {
     next ();
-    return state >> 32;
+    return static_cast<uint32_t> (state >> 32);
   }
   int generate_int () { return (int) generate (); }
   bool generate_bool () { return generate () < 2147483648u; }
@@ -77,6 +78,23 @@ public:
     if (delta)
       tmp %= delta;
     const int res = l + tmp;
+    assert (l <= res), assert (res <= r);
+    return res;
+  }
+
+  int64_t pick_log64 (int64_t l, int64_t r) {
+    assert (l <= r);
+    const uint64_t delta = 1 + r - (unsigned) l;
+    int64_t log_delta = delta ? 0 : 64;
+    while (log_delta < 64 && ((uint64_t) 1u << log_delta) < delta)
+      log_delta++;
+    const int log_res = pick_int (0, log_delta);
+    unsigned tmp = generate ();
+    if (log_res < 64)
+      tmp &= (((uint64_t) 1) << log_res) - 1;
+    if (delta)
+      tmp %= delta;
+    const int64_t res = l + tmp;
     assert (l <= res), assert (res <= r);
     return res;
   }

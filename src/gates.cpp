@@ -21,6 +21,7 @@ int Internal::second_literal_in_binary_clause (Eliminator &eliminator,
                                                Clause *c, int first) {
   assert (!c->garbage);
   int second = 0;
+  ++eliminator.ticks;
   for (const auto &lit : *c) {
     if (lit == first)
       continue;
@@ -275,8 +276,8 @@ void Internal::find_equivalence (Eliminator &eliminator, int pivot) {
       continue;
 
     LOG ("found equivalence %d = %d", pivot, -second);
-    stats.elimequivs++;
-    stats.elimgates++;
+    stats.eliminate_equivalence++;
+    stats.eliminate_gates++;
 
     LOG (c, "first gate clause");
     assert (!c->gate);
@@ -340,6 +341,8 @@ void Internal::find_and_gate (Eliminator &eliminator, int pivot) {
       continue;
     if (c->size < 3)
       continue;
+    if (c->size > opts.elimclslim)
+      goto DONE;
 
     bool all_literals_marked = true;
     unsigned arity = 0;
@@ -394,8 +397,8 @@ void Internal::find_and_gate (Eliminator &eliminator, int pivot) {
       fflush (stdout);
     }
 #endif
-    stats.elimands++;
-    stats.elimgates++;
+    stats.eliminate_and++;
+    stats.eliminate_gates++;
     eliminator.gatetype = AND;
 
     (void) arity;
@@ -453,8 +456,13 @@ bool Internal::get_ternary_clause (Clause *d, int &a, int &b, int &c) {
   int found = 0;
   a = b = c = 0;
   for (const auto &lit : *d) {
-    if (val (lit))
+    const signed char tmp = val (lit);
+    if (tmp < 0)
       continue;
+    if (tmp > 0) {
+      mark_garbage (d);
+      return false;
+    }
     if (++found == 1)
       a = lit;
     else if (found == 2)
@@ -474,8 +482,11 @@ bool Internal::match_ternary_clause (Clause *d, int a, int b, int c) {
     return false;
   int found = 0;
   for (const auto &lit : *d) {
-    if (val (lit))
+    const signed char tmp = val (lit);
+    if (tmp < 0)
       continue;
+    if (tmp > 0)
+      return false;
     if (a != lit && b != lit && c != lit)
       return false;
     found++;
@@ -563,8 +574,8 @@ void Internal::find_if_then_else (Eliminator &eliminator, int pivot) {
       eliminator.gates.push_back (dj);
       eliminator.gates.push_back (d1);
       eliminator.gates.push_back (d2);
-      stats.elimgates++;
-      stats.elimites++;
+      stats.eliminate_gates++;
+      stats.eliminate_ite++;
       eliminator.gatetype = ITE;
       return;
     }
@@ -671,7 +682,7 @@ void Internal::find_xor_gate (Eliminator &eliminator, int pivot) {
         const unsigned bit = 1u << j;
         int lit = lits[j];
         if ((prev & bit) != (signs & bit))
-          lits[j] = lit = -lit;
+          lits[j] = -lit;
       }
       Clause *e = find_clause (lits);
       if (!e)
@@ -707,8 +718,8 @@ void Internal::find_xor_gate (Eliminator &eliminator, int pivot) {
       fflush (stdout);
     }
 #endif
-    stats.elimgates++;
-    stats.elimxors++;
+    stats.eliminate_gates++;
+    stats.eliminate_xor++;
     const auto end = eliminator.gates.end ();
     auto j = eliminator.gates.begin ();
     for (auto i = j; i != end; i++) {

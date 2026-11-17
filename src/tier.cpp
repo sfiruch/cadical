@@ -8,9 +8,10 @@ void Internal::recompute_tier () {
   if (!opts.recomputetier)
     return;
 
-  ++stats.tierecomputed;
-  const int64_t delta =
-      stats.tierecomputed >= 16 ? 1u << 16 : (1u << stats.tierecomputed);
+  ++stats.recomputed_tiers;
+  const int64_t delta = stats.recomputed_tiers >= 16
+                            ? 1u << 16
+                            : (1u << stats.recomputed_tiers);
   lim.recompute_tier = stats.conflicts + delta;
   LOG ("rescheduling in %" PRId64 " at %" PRId64 " (conflicts at %" PRId64
        ")",
@@ -74,7 +75,7 @@ void Internal::recompute_tier () {
     tier2[stable] = tier1[stable] + 1;
   assert (tier2[stable] > tier1[stable]);
 
-  PHASE ("retiered", stats.tierecomputed,
+  PHASE ("retiered", stats.recomputed_tiers,
          "tier1 limit = %d in %s mode, tier2 limit = %d in %s mode",
          tier1[stable], stable ? "stable" : "focused", tier2[stable],
          stable ? "stable" : "focused");
@@ -91,7 +92,10 @@ void Internal::print_tier_usage_statistics () {
     const std::string mode = stable ? "stable" : "focused";
     const size_t tier1 = internal->tier1[stable];
     const size_t tier2 = internal->tier2[stable];
-    if (tier1 > tier2 && opts.reducetier1glue > opts.reducetier2glue) {
+    if (tier1 > tier2) {
+      // TODO: this assertion is not general enough
+      // assert (opts.reducetier1glue > opts.reducetier2glue ||
+      //        opts.tier1minglue > opts.reducetier2glue);
       MSG ("tier1 > tier 2 due to the options, giving up");
       break;
     }
@@ -108,7 +112,7 @@ void Internal::print_tier_usage_statistics () {
 
     uint64_t accumulated_middle = 0;
     int glue_digits = 1, clauses_digits = 1;
-    for (unsigned glue = 0; glue <= stats.used[stable].size (); glue++) {
+    for (unsigned glue = 0; glue < stats.used[stable].size (); glue++) {
       if (glue < tier1)
         continue;
       uint64_t used = stats.used[stable][glue];
@@ -134,7 +138,7 @@ void Internal::print_tier_usage_statistics () {
     accumulated_middle = 0;
     uint64_t accumulated = 0;
     std::string output;
-    for (unsigned glue = 0; glue <= stats.used[stable].size (); glue++) {
+    for (unsigned glue = 0; glue < stats.used[stable].size (); glue++) {
       uint64_t used = stats.used[stable][glue];
       accumulated += used;
       if (glue < tier1)

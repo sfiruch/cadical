@@ -51,7 +51,7 @@ int Internal::most_occurring_literal () {
       for (const auto &lit : *c)
         if (active (lit))
           noccs (lit)++;
-  int64_t max_noccs = 0;
+  uint64_t max_noccs = 0;
   int res = 0;
 
   if (unsat)
@@ -65,14 +65,14 @@ int Internal::most_occurring_literal () {
       const int lit = sign * idx;
       if (!active (lit))
         continue;
-      int64_t tmp = noccs (lit);
+      uint64_t tmp = noccs (lit);
       if (tmp <= max_noccs)
         continue;
       max_noccs = tmp;
       res = lit;
     }
   }
-  MSG ("maximum occurrence %" PRId64 " of literal %d", max_noccs, res);
+  MSG ("maximum occurrence %" PRIu64 " of literal %d", max_noccs, res);
   reset_noccs ();
   return res;
 }
@@ -117,9 +117,9 @@ void Internal::lookahead_flush_probes () {
     if (have_pos_bin_occs)
       lit = -lit;
     assert (!noccs (lit)), assert (noccs (-lit) > 0);
-    if (propfixed (lit) >= stats.all.fixed)
+    if (propfixed (lit) >= stats.vars_all_fixed)
       continue;
-    MSG ("keeping probe %d negated occs %" PRId64 "", lit, noccs (-lit));
+    MSG ("keeping probe %d negated occs %" PRIu64 "", lit, noccs (-lit));
     *j++ = lit;
   }
   size_t remain = j - probes.begin ();
@@ -176,10 +176,10 @@ void Internal::lookahead_generate_probes () {
 
       // See the discussion where 'propfixed' is used below.
       //
-      if (propfixed (probe) >= stats.all.fixed)
+      if (propfixed (probe) >= stats.vars_all_fixed)
         continue;
 
-      MSG ("scheduling probe %d negated occs %" PRId64 "", probe,
+      MSG ("scheduling probe %d negated occs %" PRIu64 "", probe,
            noccs (-probe));
       probes.push_back (probe);
     }
@@ -189,10 +189,10 @@ void Internal::lookahead_generate_probes () {
 
       // See the discussion where 'propfixed' is used below.
       //
-      if (propfixed (probe) >= stats.all.fixed)
+      if (propfixed (probe) >= stats.vars_all_fixed)
         continue;
 
-      MSG ("scheduling probe %d negated occs %" PRId64 "", probe,
+      MSG ("scheduling probe %d negated occs %" PRIu64 "", probe,
            noccs (-probe));
       probes.push_back (probe);
     }
@@ -238,7 +238,7 @@ int Internal::lookahead_next_probe () {
       // Alg. 4 in his JAIR article from 2002) and it has also been
       // contributed to the thesis work of Yacine Boufkhad.
       //
-      if (propfixed (probe) >= stats.all.fixed)
+      if (propfixed (probe) >= stats.vars_all_fixed)
         continue;
 
       return probe;
@@ -295,7 +295,7 @@ int Internal::lookahead_probing () {
   termination_forced = false;
 
 #ifndef QUIET
-  int old_failed = stats.failed;
+  int old_failed = stats.failed_literals;
   int64_t old_probed = stats.probed;
 #endif
   int64_t old_hbrs = stats.hbrs;
@@ -303,7 +303,7 @@ int Internal::lookahead_probing () {
   if (unsat)
     return INT_MIN;
   if (level)
-    backtrack ();
+    backtrack_without_updating_phases ();
   if (!propagate ()) {
     MSG ("empty clause before probing");
     learn_empty_clause ();
@@ -369,7 +369,7 @@ int Internal::lookahead_probing () {
   reset_mode (PROBE);
 
   if (unsat) {
-    MSG ("probing derived empty clause");
+    MSG ("lookahead probing derived empty clause");
     res = INT_MIN;
   } else if (propagated < trail.size ()) {
     MSG ("probing produced %zd units",
@@ -383,7 +383,7 @@ int Internal::lookahead_probing () {
   }
 
 #ifndef QUIET
-  int failed = stats.failed - old_failed;
+  int failed = stats.failed_literals - old_failed;
   int64_t probed = stats.probed - old_probed;
 #endif
   int64_t hbrs = stats.hbrs - old_hbrs;
@@ -396,12 +396,16 @@ int Internal::lookahead_probing () {
     PHASE ("lookahead-probe-round", stats.probingrounds,
            "found %" PRId64 " hyper binary resolvents", hbrs);
 
-  MSG ("lookahead literal %d with %d\n", res, max_hbrs);
+  MSG ("lookahead literal %d with %d", res, max_hbrs);
 
   return res;
 }
 
 CubesWithStatus Internal::generate_cubes (int depth, int min_depth) {
+  MSG ("Generating cubes of depth %i", depth);
+
+  // presimplify required due to assumptions
+
   if (!active () || depth == 0) {
     CubesWithStatus cubes;
     cubes.status = 0;
@@ -409,37 +413,14 @@ CubesWithStatus Internal::generate_cubes (int depth, int min_depth) {
     return cubes;
   }
 
-  lookingahead = true;
-  START (lookahead);
-  MSG ("Generating cubes of depth %i", depth);
-
-  // presimplify required due to assumptions
-
-  termination_forced = false;
-  int res = already_solved ();
-  if (res == 0)
-    res = restore_clauses ();
-  if (unsat)
-    res = 10;
-  if (res != 0)
-    res = solve (true);
-  if (res != 0) {
-    MSG ("Solved during preprocessing");
-    CubesWithStatus cubes;
-    cubes.status = res;
-    lookingahead = false;
-    STOP (lookahead);
-    return cubes;
-  }
-
-  reset_limits ();
-  MSG ("generate cubes with %zu assumptions\n", assumptions.size ());
+  backtrack_without_updating_phases (0);
+  MSG ("generate cubes with %zu assumptions", assumptions.size ());
 
   assert (ntab.empty ());
   std::vector<int> current_assumptions{assumptions};
   std::vector<std::vector<int>> cubes{{assumptions}};
   auto loccs{lookahead_populate_locc ()};
-  LOG ("loccs populated\n");
+  LOG ("loccs populated");
   assert (ntab.empty ());
 
   for (int i = 0; i < depth; ++i) {
@@ -455,21 +436,27 @@ CubesWithStatus Internal::generate_cubes (int depth, int min_depth) {
       for (auto lit : cubes2[j])
         assume (lit);
       restore_clauses ();
-      propagate ();
+      if (unsat) {
+        LOG ("global unsat");
+        break;
+      }
+      const bool trivial_unsat = propagate ();
       // preprocess_round(0); //uncomment maybe
 
       if (unsat) {
+        LOG ("global unsat");
+        break;
+      }
+      if (trivial_unsat) {
         LOG ("current cube is unsat; skipping");
-        unsat = false;
         continue;
       }
 
       int res = terminating_asked () ? lookahead_locc (loccs)
                                      : lookahead_probing ();
       if (unsat) {
-        LOG ("current cube is unsat; skipping");
-        unsat = false;
-        continue;
+        LOG ("global unsat");
+        break;
       }
 
       if (res == 0) {
@@ -499,9 +486,6 @@ CubesWithStatus Internal::generate_cubes (int depth, int min_depth) {
 
   for (auto lit : current_assumptions)
     assume (lit);
-
-  STOP (lookahead);
-  lookingahead = false;
 
   if (unsat) {
     LOG ("Solved during preprocessing");

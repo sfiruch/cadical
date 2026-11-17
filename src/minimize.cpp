@@ -32,8 +32,10 @@ bool Internal::minimize_literal (int lit, int depth) {
     return false;
   bool res = true;
   assert (v.reason);
-  if (opts.minimizeticks)
-    stats.ticks.search[stable]++;
+  if (opts.minimizeticks) {
+    stable ? stats.ticks_search_stable++ : stats.ticks_search_unstable++;
+    stats.ticks++;
+  }
   if (v.reason == external_reason) {
     assert (!opts.exteagerreasons);
     v.reason = learn_external_reason_clause (lit, 0, true);
@@ -108,7 +110,7 @@ struct minimize_trail_level_smaller {
 };
 
 void Internal::minimize_clause () {
-  START (minimize);
+  PROFILE_SCOPE (minimize);
   LOG (clause, "minimizing first UIP clause");
 
   external->check_learned_clause (); // check 1st UIP learned clause first
@@ -142,7 +144,6 @@ void Internal::minimize_clause () {
     lrat_chain.push_back (*p);
   }
   minimize_chain.clear ();
-  STOP (minimize);
 }
 
 // go backwards in reason graph and add ids

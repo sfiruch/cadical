@@ -6,3 +6,13 @@ makefile
 /x64
 /CaDiCaL.vcxproj.user
 /CaDiCaL/x64
+/*.trace
+/debug.json
+/*.cnf
+/*.lrat
+/*.drat
+.zed
+/traces
+*.plist
+*.pch
+.cache

@@ -63,6 +63,8 @@ void Internal::remove_falsified_literals (Clause *c) {
     j--;
   }
   stats.collected += shrink_clause (c, j - c->begin ());
+  if (c->size == 2)
+    new_binary_since_dedup = true;
 }
 
 // If there are new units (fixed variables) since the last garbage
@@ -72,9 +74,9 @@ void Internal::remove_falsified_literals (Clause *c) {
 
 void Internal::mark_satisfied_clauses_as_garbage () {
 
-  if (last.collect.fixed >= stats.all.fixed)
+  if (last.collect.fixed >= stats.vars_all_fixed)
     return;
-  last.collect.fixed = stats.all.fixed;
+  last.collect.fixed = stats.vars_all_fixed;
 
   LOG ("marking satisfied clauses and removing falsified literals");
 
@@ -117,7 +119,13 @@ void Internal::protect_reasons () {
       continue;
     if (reason == external_reason)
       continue;
-    LOG (reason, "protecting assigned %d reason %p", lit, (void *) reason);
+#ifdef LOGGING
+    if (opts.logpointer)
+      LOG (reason, "protecting assigned %d reason %p", lit,
+           (void *) reason);
+    else
+      LOG (reason, "protecting assigned %d reason", lit);
+#endif
     assert (!reason->reason);
     reason->reason = true;
 #ifdef LOGGING
@@ -150,8 +158,13 @@ void Internal::unprotect_reasons () {
       continue;
     if (reason == external_reason)
       continue;
-    LOG (reason, "unprotecting assigned %d reason %p", lit,
-         (void *) reason);
+#ifdef LOGGING
+    if (opts.logpointer)
+      LOG (reason, "unprotecting assigned %d reason %p", lit,
+           (void *) reason);
+    else
+      LOG (reason, "unprotecting assigned %d reason", lit);
+#endif
     assert (reason->reason);
     reason->reason = false;
 #ifdef LOGGING
@@ -315,8 +328,13 @@ void Internal::copy_clause (Clause *c) {
   char *q = arena.copy (p, c->bytes ());
   c->copy = (Clause *) q;
   c->moved = true;
-  LOG ("copied clause[%" PRId64 "] from %p to %p", c->id, (void *) c,
-       (void *) c->copy);
+#ifdef LOGGING
+  if (opts.logpointer)
+    LOG ("copied clause[%" PRId64 "] from %p to %p", c->copy->id,
+         (void *) c, (void *) c->copy);
+  else
+    LOG ("copied clause[%" PRId64 "]", c->copy->id);
+#endif
 }
 
 // This is the moving garbage collector.
@@ -447,10 +465,14 @@ void Internal::copy_non_garbage_clauses () {
 
 void Internal::check_clause_stats () {
 #ifndef NDEBUG
-  int64_t irredundant = 0, redundant = 0, total = 0, irrlits = 0;
+  int64_t irredundant = 0, redundant = 0, total = 0, irrlits = 0,
+          garbagelits = 0, garbagecls = 0;
   for (const auto &c : clauses) {
-    if (c->garbage)
+    if (c->garbage) {
+      ++garbagecls;
+      garbagelits += c->size;
       continue;
+    }
     if (c->redundant)
       redundant++;
     else
@@ -459,10 +481,12 @@ void Internal::check_clause_stats () {
       irrlits += c->size;
     total++;
   }
-  assert (stats.current.irredundant == irredundant);
-  assert (stats.current.redundant == redundant);
-  assert (stats.current.total == total);
-  assert (stats.irrlits == irrlits);
+  assert (stats.clauses_now_irr == irredundant);
+  assert (stats.clauses_now_red == redundant);
+  assert (stats.clauses_now_total == total);
+  assert (stats.irredundant_literals == irrlits);
+  assert (stats.garbage_literals == garbagelits);
+  assert (stats.garbage_clauses == garbagecls);
 #endif
 }
 
@@ -473,7 +497,7 @@ void Internal::check_clause_stats () {
 void Internal::remove_garbage_binaries () {
   if (unsat)
     return;
-  START (collect);
+  PROFILE_SCOPE (collect);
 
   if (!protected_reasons)
     protect_reasons ();
@@ -515,7 +539,6 @@ void Internal::remove_garbage_binaries () {
   unprotect_reasons ();
   if (backtrack_level - 1 < level)
     backtrack (backtrack_level - 1);
-  STOP (collect);
 }
 
 /*------------------------------------------------------------------------*/
@@ -525,7 +548,7 @@ bool Internal::arenaing () { return opts.arena && (stats.collections > 1); }
 void Internal::garbage_collection () {
   if (unsat)
     return;
-  START (collect);
+  PROFILE_SCOPE (collect);
   report ('G', 1);
   stats.collections++;
   mark_satisfied_clauses_as_garbage ();
@@ -539,7 +562,6 @@ void Internal::garbage_collection () {
   check_var_stats ();
   unprotect_reasons ();
   report ('C', 1);
-  STOP (collect);
 }
 
 } // namespace CaDiCaL

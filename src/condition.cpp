@@ -52,12 +52,12 @@ bool Internal::conditioning () {
   if (level <= averages.current.jump)
     return false; // Main heuristic.
 
-  if (!stats.current.irredundant)
+  if (!stats.clauses_now_irr)
     return false;
   double remain = active ();
   if (!remain)
     return false;
-  double ratio = stats.current.irredundant / remain;
+  double ratio = stats.clauses_now_irr / remain;
   return ratio <= opts.conditionmaxrat;
 }
 
@@ -158,10 +158,10 @@ long Internal::condition_round (long delta) {
 #ifndef QUIET
   long props = 0;
 #endif
-  if (LONG_MAX - delta < stats.condprops)
+  if (LONG_MAX - delta < stats.condition_propagated)
     limit = LONG_MAX;
   else
-    limit = stats.condprops + delta;
+    limit = stats.condition_propagated + delta;
 
   size_t initial_trail_level = trail.size ();
   int initial_level = level;
@@ -417,10 +417,10 @@ long Internal::condition_round (long delta) {
   assert (initial.conditional == conditional.size ());
   assert (initial.assigned == initial.conditional + initial.autarky);
 
-  stats.condassinit += initial.assigned;
-  stats.condcondinit += initial.conditional;
-  stats.condautinit += initial.autarky;
-  stats.condassvars += active ();
+  stats.condition_pre_assign += initial.assigned;
+  stats.condition_pre_cond += initial.conditional;
+  stats.condition_pre_autarky += initial.autarky;
+  stats.condition_active += active ();
 
   // To speed-up and particularly simplify the code we unassign all
   // root-level variables temporarily, actually all inactive assigned
@@ -492,7 +492,7 @@ long Internal::condition_round (long delta) {
     bool terminated_or_limit_hit = true;
     if (terminated_asynchronously ())
       LOG ("asynchronous termination detected");
-    else if (stats.condprops >= limit)
+    else if (stats.condition_propagated >= limit)
       LOG ("condition propagation limit %ld hit", limit);
     else
       terminated_or_limit_hit = false;
@@ -544,7 +544,7 @@ long Internal::condition_round (long delta) {
       continue;
     }
 
-    stats.condcands++; // Only now ...
+    stats.condition_candidates++;
 
     LOG ("watching first autarky literal %d", watched_autarky_literal);
 
@@ -562,7 +562,7 @@ long Internal::condition_round (long delta) {
     assert (unassigned.empty ());
     assert (conditional.size () == initial.conditional);
 
-    while (watched_autarky_literal && stats.condprops < limit &&
+    while (watched_autarky_literal && stats.condition_propagated < limit &&
            next.conditional < conditional.size ()) {
 
       assert (next.unassigned == unassigned.size ());
@@ -588,7 +588,8 @@ long Internal::condition_round (long delta) {
       remain.conditional--;
       remain.assigned--;
 
-      while (watched_autarky_literal && stats.condprops < limit &&
+      while (watched_autarky_literal &&
+             stats.condition_propagated < limit &&
              next.unassigned < unassigned.size ()) {
         const int unassigned_lit = unassigned[next.unassigned++];
         LOG ("processing next unassigned %d", unassigned_lit);
@@ -596,7 +597,7 @@ long Internal::condition_round (long delta) {
 #ifndef QUIET
         props++;
 #endif
-        stats.condprops++;
+        stats.condition_propagated++;
 
         Occs &os = occs (unassigned_lit);
         if (os.empty ())
@@ -679,15 +680,14 @@ long Internal::condition_round (long delta) {
                 replacement = other;
             }
             watched_autarky_literal = replacement;
-
+#ifndef LOGGING
             if (replacement) {
               LOG (c, "watching autarky %d instead %d in candidate",
                    replacement, watched_autarky_literal);
-              watched_autarky_literal = replacement;
             } else {
               LOG ("failed to find an autarky replacement");
-              watched_autarky_literal = 0; // Breaks out of 4 loops!!!!!
             }
+#endif
           } // End of loop of turning autarky literals into conditionals.
         } // End of loop of all watched clauses of an unassigned literal.
         //
@@ -753,7 +753,7 @@ long Internal::condition_round (long delta) {
     // we did not abort the loop too early because the propagation
     // limit was hit.
     //
-    if (watched_autarky_literal && stats.condprops < limit) {
+    if (watched_autarky_literal && stats.condition_propagated < limit) {
       assert (is_autarky_literal (watched_autarky_literal));
       assert (is_in_candidate_clause (watched_autarky_literal));
 
@@ -784,20 +784,24 @@ long Internal::condition_round (long delta) {
       // TODO find a way to shrink the autarky part or some other way to
       // avoid pushing too many literals on the extension stack.
       //
-      external->push_zero_on_extension_stack ();
+      vector<int> wits;
       for (const auto &lit : trail)
         if (is_autarky_literal (lit))
-          external->push_witness_literal_on_extension_stack (lit);
+          wits.push_back (lit);
       if (proof)
         proof->weaken_minus (c);
-      external->push_clause_on_extension_stack (c);
 
+      external->create_cube_stack (wits);
+      external->push_cube_clause (c);
+      external->terminate_cube_stack ();
+
+      wits.clear ();
       mark_garbage (c);
 
-      stats.condassrem += remain.assigned;
-      stats.condcondrem += remain.conditional;
-      stats.condautrem += remain.autarky;
-      stats.condassirem += initial.assigned;
+      stats.conditioned_assign += remain.assigned;
+      stats.conditioned_cond += remain.conditional;
+      stats.conditioned_autarky += remain.autarky;
+      stats.conditioned_initial += initial.assigned;
     }
 
     // In this last part specific to one candidate clause, we have to get
@@ -896,25 +900,28 @@ void Internal::condition (bool update_limits) {
 
   if (unsat)
     return;
-  if (!stats.current.irredundant)
+  if (terminated_asynchronously ())
+    return;
+  if (!stats.clauses_now_irr)
     return;
 
-  START_SIMPLIFIER (condition, CONDITION);
+  MODE_SCOPE_SIMPLIFY (CONDITION);
+  PROFILE_SCOPE_SIMPLIFY (condition);
   stats.conditionings++;
 
   // Propagation limit to avoid too much work in 'condition'.  We mark
   // tried candidate clauses after giving up, such that next time we run
   // 'condition' we can try them.
   //
-  long limit = stats.propagations.search;
+  long limit = stats.propagations_search;
   limit *= opts.conditioneffort;
   limit /= 1000;
   if (limit < opts.conditionmineff)
     limit = opts.conditionmineff;
   if (limit > opts.conditionmaxeff)
     limit = opts.conditionmaxeff;
-  assert (stats.current.irredundant);
-  limit *= 2.0 * active () / (double) stats.current.irredundant;
+  assert (stats.clauses_now_irr);
+  limit *= 2.0 * active () / (double) stats.clauses_now_irr;
   limit = max (limit, 2l * active ());
 
   PHASE ("condition", stats.conditionings,
@@ -922,8 +929,6 @@ void Internal::condition (bool update_limits) {
          stats.conflicts, limit);
 
   long blocked = condition_round (limit);
-
-  STOP_SIMPLIFIER (condition, CONDITION);
   report ('g', !blocked);
 
   if (!update_limits)

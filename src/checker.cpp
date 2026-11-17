@@ -38,8 +38,16 @@ inline CheckerWatcher &Checker::watcher (int lit) {
 CheckerClause *Checker::new_clause () {
   const size_t size = simplified.size ();
   assert (size > 1), assert (size <= UINT_MAX);
-  const size_t bytes = sizeof (CheckerClause) + (size - 2) * sizeof (int);
-  CheckerClause *res = (CheckerClause *) new char[bytes];
+
+  const size_t header_bytes = sizeof (CheckerClause);
+  const size_t actual_literal_bytes = size * sizeof (int);
+  size_t combined_bytes = header_bytes + actual_literal_bytes;
+#ifdef NFLEXIBLE
+  const size_t faked_literals_bytes =
+      sizeof ((CheckerClause *) 0)->literals;
+  combined_bytes -= faked_literals_bytes;
+#endif
+  CheckerClause *res = (CheckerClause *) new char[combined_bytes];
   DeferDeleteArray<char> delete_res ((char *) res);
   res->next = 0;
   res->hash = last_hash;
@@ -469,18 +477,18 @@ bool Checker::check_blocked () {
       for (int *i = c->literals; i < c->literals + c->size; i++) {
         const int lit = *i;
         if (val (lit) > 0) {
-          LOG (c->literals, c->size, "satisfied clause");
           count = 2;
           break;
         }
         if (mark (lit)) {
           count++;
-          LOG (c->literals, c->size, "clause");
           first = lit;
         }
       }
-      if (count == 1)
+      if (count == 1) {
         not_blocked.push_back (first);
+        LOG (c->literals, c->size, "CHECKER non-blocked %d clause", first);
+      }
     }
   }
   for (const auto &lit : not_blocked) {
@@ -542,7 +550,7 @@ void Checker::add_original_clause (int64_t id, bool, const vector<int> &c,
                                    bool) {
   if (inconsistent)
     return;
-  START (checking);
+  PROFILE_SCOPE (checking);
   LOG (c, "CHECKER addition of original clause");
   stats.added++;
   stats.original++;
@@ -554,7 +562,6 @@ void Checker::add_original_clause (int64_t id, bool, const vector<int> &c,
     add_clause ("original");
   simplified.clear ();
   unsimplified.clear ();
-  STOP (checking);
 }
 
 void Checker::add_derived_clause (int64_t id, bool, int,
@@ -562,7 +569,7 @@ void Checker::add_derived_clause (int64_t id, bool, int,
                                   const vector<int64_t> &) {
   if (inconsistent)
     return;
-  START (checking);
+  PROFILE_SCOPE (checking);
   LOG (c, "CHECKER addition of derived clause");
   stats.added++;
   stats.derived++;
@@ -581,7 +588,6 @@ void Checker::add_derived_clause (int64_t id, bool, int,
     add_clause ("derived");
   simplified.clear ();
   unsimplified.clear ();
-  STOP (checking);
 }
 
 /*------------------------------------------------------------------------*/
@@ -589,7 +595,7 @@ void Checker::add_derived_clause (int64_t id, bool, int,
 void Checker::delete_clause (int64_t id, bool, const vector<int> &c) {
   if (inconsistent)
     return;
-  START (checking);
+  PROFILE_SCOPE (checking);
   LOG (c, "CHECKER checking deletion of clause");
   stats.deleted++;
   simplified.clear ();   // Can be non-empty if clause allocation fails.
@@ -619,7 +625,6 @@ void Checker::delete_clause (int64_t id, bool, const vector<int> &c) {
   }
   simplified.clear ();
   unsimplified.clear ();
-  STOP (checking);
 }
 
 void Checker::add_assumption_clause (int64_t id, const vector<int> &c,

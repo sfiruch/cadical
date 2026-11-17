@@ -10,7 +10,7 @@ void Internal::assume (int lit) {
   if (level && !opts.ilb)
     backtrack ();
   else if (val (lit) < 0)
-    backtrack (max (0, var (lit).level - 1));
+    backtrack_without_updating_phases (max (0, var (lit).level - 1));
   Flags &f = flags (lit);
   const unsigned char bit = bign (lit);
   if (f.assumed & bit) {
@@ -24,39 +24,59 @@ void Internal::assume (int lit) {
 }
 
 // for LRAT we actually need to implement recursive DFS
-// for non-lrat use BFS. TODO: maybe derecursify to avoid stack overflow
+// for non-lrat use BFS. The DFS uses an explicit stack, since implication
+// chains can be long enough to overflow the call stack.
 //
 void Internal::assume_analyze_literal (int lit) {
-  assert (lit);
-  Flags &f = flags (lit);
-  if (f.seen)
-    return;
-  f.seen = true;
-  analyzed.push_back (lit);
-  Var &v = var (lit);
-  assert (val (lit) < 0);
-  if (v.reason == external_reason) {
-    v.reason = wrapped_learn_external_reason_clause (-lit);
-    assert (v.reason || !v.level);
-  }
-  assert (v.reason != external_reason);
-  if (!v.level) {
-    int64_t id = unit_id (-lit);
-    lrat_chain.push_back (id);
-    return;
-  }
-  if (v.reason) {
-    assert (v.level);
-    LOG (v.reason, "analyze reason");
-    for (const auto &other : *v.reason) {
-      assume_analyze_literal (other);
+  // Visits a literal before the literals of its reason and returns the
+  // reason if it still has to be analyzed.
+  const auto visit = [this] (int lit) -> Clause * {
+    assert (lit);
+    Flags &f = flags (lit);
+    if (f.seen)
+      return 0;
+    f.seen = true;
+    analyzed.push_back (lit);
+    Var &v = var (lit);
+    assert (val (lit) < 0);
+    if (v.reason == external_reason) {
+      v.reason = learn_external_reason_clause (-lit, 0, true);
+      assert (v.reason || !v.level);
     }
-    lrat_chain.push_back (v.reason->id);
+    assert (v.reason != external_reason);
+    if (!v.level) {
+      int64_t id = unit_id (-lit);
+      lrat_chain.push_back (id);
+      return 0;
+    }
+    if (v.reason) {
+      assert (v.level);
+      LOG (v.reason, "analyze reason");
+      return v.reason;
+    }
+    assert (assumed (-lit));
+    LOG ("failed assumption %d", -lit);
+    clause.push_back (lit);
+    return 0;
+  };
+  Clause *reason = visit (lit);
+  if (!reason)
     return;
+  // The reasons on the DFS path with the position of their next literal.
+  vector<pair<Clause *, int>> stack;
+  stack.push_back ({reason, 0});
+  while (!stack.empty ()) {
+    Clause *c = stack.back ().first;
+    const int i = stack.back ().second;
+    if (i < c->size) {
+      stack.back ().second = i + 1;
+      if (Clause *r = visit (c->literals[i]))
+        stack.push_back ({r, 0});
+    } else {
+      lrat_chain.push_back (c->id);
+      stack.pop_back ();
+    }
   }
-  assert (assumed (-lit));
-  LOG ("failed assumption %d", -lit);
-  clause.push_back (lit);
 }
 
 void Internal::assume_analyze_reason (int lit, Clause *reason) {
@@ -76,7 +96,7 @@ void Internal::assume_analyze_reason (int lit, Clause *reason) {
 
 void Internal::failing () {
 
-  START (analyze);
+  PROFILE_SCOPE (analyze);
 
   LOG ("analyzing failing assumptions");
 
@@ -193,7 +213,7 @@ void Internal::failing () {
         conclusion.push_back (clause_id);
         lrat_chain.clear ();
       }
-      goto DONE;
+      return;
     }
 
     // Second case (2).
@@ -209,7 +229,7 @@ void Internal::failing () {
         proof->add_assumption_clause (++clause_id, clash, lrat_chain);
         conclusion.push_back (clause_id);
       }
-      goto DONE;
+      return;
     }
 
     // Fall through to third case (3).
@@ -252,7 +272,7 @@ void Internal::failing () {
     vector<int> sum_constraints;
     vector<int> econstraints;
     for (auto &elit : external->constraint) {
-      int lit = external->e2i[abs (elit)];
+      int lit = external->e2i.find_or_default (abs (elit), 0);
       if (elit < 0)
         lit = -lit;
       if (!lit)
@@ -276,7 +296,7 @@ void Internal::failing () {
         if (!v.level)
           continue;
         if (v.reason == external_reason) {
-          v.reason = wrapped_learn_external_reason_clause (lit);
+          v.reason = learn_external_reason_clause (lit, 0, true);
           if (!v.reason) {
             v.level = 0;
             continue;
@@ -311,7 +331,7 @@ void Internal::failing () {
       Var &v = var (lit);
       assert (v.reason);
       if (v.reason == external_reason) { // does this even happen?
-        v.reason = wrapped_learn_external_reason_clause (lit);
+        v.reason = learn_external_reason_clause (lit, 0, true);
       }
       assert (v.reason != external_reason);
       if (v.reason)
@@ -440,10 +460,6 @@ void Internal::failing () {
     lrat_chain.clear ();
     clause.clear ();
   }
-
-DONE:
-
-  STOP (analyze);
 }
 
 bool Internal::failed (int lit) {
@@ -479,7 +495,13 @@ void Internal::conclude_unsat () {
 }
 
 void Internal::reset_concluded () {
-  if (proof)
+  // this is preemptive fix: if you reset the constrain without
+  // resetting the assumptions, you should not reset the assumptions in
+  // the proofs.  This is not possible anymore since reset_constrain
+  // () is not part part of the API anymore, but this was possible in
+  // 3.0.1. Therefore, for defensive programming, we decided to
+  // implement the code just in case we ever readd the call.
+  if (proof && external->assumptions.empty ())
     proof->reset_assumptions ();
   if (concluded) {
     LOG ("reset concluded");
@@ -592,7 +614,7 @@ void Internal::sort_and_reuse_assumptions () {
       break;
     }
     ++i, ++j;
-    assert (var (lit).level == lev);
+    assert (var (lit).level == lev || !var (lit).level || var (lit).reason);
     if (l.decision == alit) {
       continue;
     }
@@ -609,8 +631,8 @@ void Internal::sort_and_reuse_assumptions () {
     backtrack_without_updating_phases (target);
   LOG ("assumptions allow for reuse of trail up to level %d", level);
   if ((size_t) level > assumptions.size ())
-    stats.assumptionsreused += assumptions.size ();
+    stats.ilb_reuse_assumptions += assumptions.size ();
   else
-    stats.assumptionsreused += level;
+    stats.ilb_reuse_assumptions += level;
 }
 } // namespace CaDiCaL

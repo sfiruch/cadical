@@ -1,9 +1,24 @@
 #include "vivify.hpp"
+#include "clause.hpp"
 #include "internal.hpp"
+#include "limit.hpp"
+#include "logging.hpp"
+#include "message.hpp"
+#include "profile.hpp"
+#include "radix.hpp"
 #include "util.hpp"
+#include "watch.hpp"
+
 #include <algorithm>
+#include <array>
+#include <cassert>
+#include <cinttypes>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
-#include <utility>
+#include <tuple>
+#include <vector>
 
 namespace CaDiCaL {
 
@@ -49,8 +64,7 @@ namespace CaDiCaL {
 inline void Internal::vivify_subsume_clause (Clause *subsuming,
                                              Clause *subsumed) {
   assert (subsumed != subsuming);
-  stats.subsumed++;
-  stats.vivifysubs++;
+  stats.vivify_subsumed++;
 #ifndef NDEBUG
   assert (subsuming);
   assert (subsumed);
@@ -75,48 +89,27 @@ inline void Internal::vivify_subsume_clause (Clause *subsuming,
   LOG (subsumed, "subsumed to be deleted");
   LOG (subsuming, "subsuming to be (un)deleted");
   if (subsumed->redundant && subsuming->redundant &&
-      subsuming->glue < subsumed->glue) {
+      subsumed->glue < subsuming->glue) {
     promote_clause (subsuming, subsumed->glue);
   }
   if (subsumed->redundant) {
-    stats.subred++;
-    ++stats.vivifysubred;
+    stats.subsumed_redundant++;
+    ++stats.vivify_subsumed_red;
   } else {
-    stats.subirr++;
-    ++stats.vivifysubirr;
+    stats.subsumed_irredundant++;
+    ++stats.vivify_subsumed_irr;
   }
   if (subsuming->garbage) {
     assert (subsuming->size == 2);
     LOG (subsuming,
          "binary subsuming clause was already deleted, so undeleting");
-    subsuming->garbage = false;
-    subsuming->glue = 1;
-    ++stats.current.total;
-    if (subsuming->redundant)
-      stats.current.redundant++;
-    else
-      stats.current.irredundant++, stats.irrlits += subsuming->size;
-    stats.garbage.literals -= subsuming->size;
-    --stats.garbage.clauses;
+    undelete_clause (subsuming);
   }
   if (subsumed->redundant || !subsuming->redundant) {
     mark_garbage (subsumed);
     return;
   }
-  LOG ("turning redundant subsuming clause into irredundant clause");
-  subsuming->redundant = false;
-  if (proof)
-    proof->strengthen (subsuming->id);
-  mark_garbage (subsumed);
-  mark_added (subsuming);
-  stats.current.irredundant++;
-  stats.added.irredundant++;
-  stats.irrlits += subsuming->size;
-  assert (stats.current.redundant > 0);
-  stats.current.redundant--;
-  assert (stats.added.redundant > 0);
-  stats.added.redundant--;
-  // ... and keep 'stats.added.total'.
+  make_irredundant (subsuming);
 }
 
 // demoting a clause (opposite is promote from subsume.cpp)
@@ -125,20 +118,32 @@ inline void Internal::vivify_subsume_clause (Clause *subsuming,
 // proof tracers.
 inline void Internal::demote_clause (Clause *c) {
   stats.subsumed++;
-  stats.vivifydemote++;
+  stats.vivify_demote++;
   LOG (c, "demoting");
   assert (!c->redundant);
   mark_removed (c);
   c->redundant = true;
-  assert (stats.current.irredundant > 0);
-  stats.current.irredundant--;
-  assert (stats.added.irredundant > 0);
-  stats.added.irredundant--;
-  stats.irrlits -= c->size;
-  stats.current.redundant++;
-  stats.added.redundant++;
+  assert (stats.clauses_now_irr > 0);
+  stats.clauses_now_irr--;
+  assert (stats.clauses_irredundant > 0);
+  stats.clauses_irredundant--;
+  stats.irredundant_literals -= c->size;
+  stats.clauses_now_red++;
+  stats.clauses_redundant++;
   c->glue = c->size - 1;
-  // ... and keep 'stats.added.total'.
+  // ... and keep 'stats.clauses'.
+}
+
+inline void Internal::undelete_clause (Clause *c) {
+  c->garbage = false;
+  c->glue = 1;
+  ++stats.clauses_now_total;
+  if (c->redundant)
+    stats.clauses_now_red++;
+  else
+    stats.clauses_now_irr++, stats.irredundant_literals += c->size;
+  stats.garbage_literals -= c->size;
+  --stats.garbage_clauses;
 }
 
 /*------------------------------------------------------------------------*/
@@ -150,16 +155,16 @@ inline void Internal::demote_clause (Clause *c) {
 // (large) clauses which are currently vivified.
 
 inline void Internal::vivify_assign (int lit, Clause *reason) {
-  require_mode (VIVIFY);
+  MODE_REQUIRE (VIVIFY);
   const int idx = vidx (lit);
   assert (!vals[idx]);
   assert (!flags (idx).eliminated () || !reason);
   Var &v = var (idx);
-  v.level = level;               // required to reuse decisions
-  v.trail = (int) trail.size (); // used in 'vivify_better_watch'
+  v.level = level;             // required to reuse decisions
+  v.trail = get_trail_size (); // used in 'vivify_better_watch'
   assert ((int) num_assigned < max_var);
   num_assigned++;
-  v.reason = level ? reason : 0; // for conflict analysis
+  v.reason = level ? reason : nullptr; // for conflict analysis
   if (!level)
     learn_unit_clause (lit);
   const signed char tmp = sign (lit);
@@ -174,13 +179,13 @@ inline void Internal::vivify_assign (int lit, Clause *reason) {
 // Assume negated literals in candidate clause.
 
 void Internal::vivify_assume (int lit) {
-  require_mode (VIVIFY);
+  MODE_REQUIRE (VIVIFY);
   level++;
-  control.push_back (Level (lit, trail.size ()));
+  control.emplace_back (lit, get_trail_size ());
   LOG ("vivify decide %d", lit);
   assert (level > 0);
   assert (propagated == trail.size ());
-  vivify_assign (lit, 0);
+  vivify_assign (lit, nullptr);
 }
 
 // Dedicated routine similar to 'propagate' in 'propagate.cpp' and
@@ -188,15 +193,15 @@ void Internal::vivify_assume (int lit) {
 // to that code for more explanation on how propagation is implemented.
 
 bool Internal::vivify_propagate (int64_t &ticks) {
-  require_mode (VIVIFY);
+  MODE_REQUIRE (VIVIFY);
   assert (!unsat);
-  START (propagate);
-  int64_t before = propagated2 = propagated;
+  PROFILE_SCOPE (propagate);
+  const size_t before = propagated2 = propagated;
   for (;;) {
     if (propagated2 != trail.size ()) {
       const int lit = -trail[propagated2++];
       LOG ("vivify propagating %d over binary clauses", -lit);
-      Watches &ws = watches (lit);
+      const Watches &ws = watches (lit);
       ticks +=
           1 + cache_lines (ws.size (), sizeof (const_watch_iterator *));
       for (const auto &w : ws) {
@@ -209,7 +214,7 @@ bool Internal::vivify_propagate (int64_t &ticks) {
           conflict = w.clause; // but continue
         else {
           ticks++;
-          build_chain_for_units (w.blit, w.clause, 0);
+          build_chain_for_units (w.blit, w.clause, false);
           vivify_assign (w.blit, w.clause);
           lrat_chain.clear ();
         }
@@ -218,10 +223,10 @@ bool Internal::vivify_propagate (int64_t &ticks) {
       const int lit = -trail[propagated++];
       LOG ("vivify propagating %d over large clauses", -lit);
       Watches &ws = watches (lit);
-      const const_watch_iterator eow = ws.end ();
-      const_watch_iterator i = ws.begin ();
+      const auto eow = ws.end ();
+      auto i = ws.begin ();
       ticks += 1 + cache_lines (ws.size (), sizeof (*i));
-      watch_iterator j = ws.begin ();
+      auto j = ws.begin ();
       while (i != eow) {
         const Watch w = *j++ = *i++;
         if (w.binary ())
@@ -241,8 +246,8 @@ bool Internal::vivify_propagate (int64_t &ticks) {
         else {
           const int size = w.clause->size;
           const const_literal_iterator end = lits + size;
-          const literal_iterator middle = lits + w.clause->pos;
-          literal_iterator k = middle;
+          literal_iterator k = lits + w.clause->pos;
+          const const_literal_iterator middle = k;
           signed char v = -1;
           int r = 0;
           while (k != end && (v = val (r = *k)) < 0)
@@ -295,11 +300,11 @@ bool Internal::vivify_propagate (int64_t &ticks) {
     } else
       break;
   }
-  int64_t delta = propagated2 - before;
-  stats.propagations.vivify += delta;
+  const size_t delta = propagated2 - before;
+  stats.propagations_vivify += static_cast<int64_t> (delta);
+  stats.propagations += static_cast<int64_t> (delta);
   if (conflict)
     LOG (conflict, "conflict");
-  STOP (propagate);
   return !conflict;
 }
 
@@ -316,8 +321,8 @@ struct vivify_more_noccs {
   vivify_more_noccs (Internal *i) : internal (i) {}
 
   bool operator() (int a, int b) {
-    int64_t n = internal->noccs (a);
-    int64_t m = internal->noccs (b);
+    const uint64_t n = internal->noccs (a);
+    const uint64_t m = internal->noccs (b);
     if (n > m)
       return true; // larger occurrences / score first
     if (n < m)
@@ -328,6 +333,8 @@ struct vivify_more_noccs {
   }
 };
 
+// assumes noccs fits in 32 bit.
+
 struct vivify_more_noccs_kissat {
 
   Internal *internal;
@@ -335,11 +342,12 @@ struct vivify_more_noccs_kissat {
   vivify_more_noccs_kissat (Internal *i) : internal (i) {}
 
   bool operator() (int a, int b) {
-    unsigned s = internal->noccs (a);
-    unsigned t = internal->noccs (b);
+    const unsigned s = internal->noccs (a);
+    const unsigned t = internal->noccs (b);
+    const int signed_part_int = 31;
     return (((t - s) |
              ((internal->vlit (a) - internal->vlit (b)) & ~(s - t))) >>
-            31);
+            signed_part_int);
   }
 };
 
@@ -377,7 +385,7 @@ void Internal::flush_vivification_schedule (std::vector<Clause *> &schedule,
   const auto end = schedule.end ();
   auto j = schedule.begin (), i = j;
 
-  Clause *prev = 0;
+  Clause *prev = nullptr;
   int64_t subsumed = 0;
   for (; i != end; i++) {
     ticks++;
@@ -408,8 +416,8 @@ void Internal::flush_vivification_schedule (std::vector<Clause *> &schedule,
     PHASE ("vivify", stats.vivifications,
            "flushed %" PRId64 " subsumed scheduled clauses", subsumed);
 
-  stats.vivifysubs += subsumed;
-  stats.vivifyflushed += subsumed;
+  stats.vivify_subsumed += subsumed;
+  stats.vivify_flushed += subsumed;
 
   if (subsumed) {
     schedule.resize (j - schedule.begin ());
@@ -480,7 +488,7 @@ void Internal::vivify_strengthen (Clause *c, int64_t &ticks) {
     assert (!val (unit));
     assign_unit (unit);
     // lrat_chain.clear ();   done in search_assign
-    stats.vivifyunits++;
+    stats.vivify_units++;
 
     bool ok = vivify_propagate (ticks);
     if (!ok)
@@ -526,7 +534,7 @@ void Internal::vivify_strengthen (Clause *c, int64_t &ticks) {
   clause.clear ();
   mark_garbage (c);
   lrat_chain.clear ();
-  ++stats.vivifystrs;
+  ++stats.vivify_strength;
 }
 
 // When shortening clauses, we have to update the watched literals.
@@ -573,8 +581,8 @@ void Internal::vivify_analyze (Clause *start, bool &subsumes,
                                Clause **subsuming,
                                const Clause *const candidate, int implied,
                                bool &redundant) {
-  const auto &t = &trail; // normal trail, so next_trail is wrong
-  int i = t->size ();     // Start at end-of-trail.
+  const auto &t = &trail;    // normal trail, so next_trail is wrong
+  int i = get_trail_size (); // Start at end-of-trail.
   Clause *reason = start;
   assert (reason);
   assert (!trail.empty ());
@@ -626,6 +634,8 @@ void Internal::vivify_analyze (Clause *start, bool &subsumes,
       if (reason != start && reason->redundant) {
         const int new_glue = recompute_glue (reason);
         promote_clause (reason, new_glue);
+      } else if (reason != start && reason->garbage) {
+        undelete_clause (reason);
       }
       if (subsumes) {
         assert (reason);
@@ -723,6 +733,8 @@ void Internal::vivify_deduce (Clause *candidate, Clause *conflict,
     if (reason != candidate && reason->redundant) {
       const int new_glue = recompute_glue (reason);
       promote_clause (reason, new_glue);
+    } else if (reason != candidate && reason->garbage) {
+      undelete_clause (reason);
     }
     if (subsumes) {
       assert (candidate != reason);
@@ -767,6 +779,7 @@ void Internal::vivify_deduce (Clause *candidate, Clause *conflict,
 bool Internal::vivify_shrinkable (const std::vector<int> &sorted,
                                   Clause *conflict) {
 
+  LOG (conflict, "checking shrinkable");
   unsigned count_implied = 0;
   for (auto lit : sorted) {
     const signed char value = val (lit);
@@ -806,16 +819,16 @@ bool Internal::vivify_shrinkable (const std::vector<int> &sorted,
 inline void Internal::vivify_increment_stats (const Vivifier &vivifier) {
   switch (vivifier.tier) {
   case Vivify_Mode::TIER1:
-    ++stats.vivifystred1;
+    ++stats.vivify_strength_tier1;
     break;
   case Vivify_Mode::TIER2:
-    ++stats.vivifystred2;
+    ++stats.vivify_strength_tier2;
     break;
   case Vivify_Mode::TIER3:
-    ++stats.vivifystred3;
+    ++stats.vivify_strength_tier3;
     break;
   case Vivify_Mode::IRREDUNDANT:
-    ++stats.vivifystrirr;
+    ++stats.vivify_strength_irr;
     break;
   }
 }
@@ -827,7 +840,7 @@ inline void Internal::vivify_increment_stats (const Vivifier &vivifier) {
 bool Internal::vivify_instantiate (
     const std::vector<int> &sorted, Clause *c,
     std::vector<std::tuple<int, Clause *, bool>> &lrat_stack,
-    int64_t &ticks) {
+    int64_t &ticks, bool removed_units) {
   LOG ("now trying instantiation");
   conflict = nullptr;
   const int lit = sorted.back ();
@@ -837,12 +850,12 @@ bool Internal::vivify_instantiate (
   assert (val (lit));
   backtrack_without_updating_phases (level - 1);
   assert (val (lit) == 0);
-  stats.vivifydecs++;
+  stats.vivify_decisions++;
   vivify_assume (lit);
   bool ok = vivify_propagate (ticks);
   if (!ok) {
     LOG (c, "instantiate success with literal %d in", lit);
-    stats.vivifyinst++;
+    stats.vivify_instantiated++;
     // strengthen clause
     if (lrat) {
       clear_analyzed_literals ();
@@ -855,7 +868,10 @@ bool Internal::vivify_instantiate (
     conflict = nullptr;
     unwatch_clause (c);
     backtrack_without_updating_phases (level - 2);
-    strengthen_clause (c, remove);
+    if (removed_units)
+      strengthen_clause_and_remove_units (c, remove);
+    else
+      strengthen_clause (c, remove);
     vivify_sort_watched (c);
     watch_clause (c);
     assert (!conflict);
@@ -893,6 +909,7 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
   //
   auto &sorted = vivifier.sorted;
   sorted.clear ();
+  bool found_units = false;
 
   for (const auto &lit : *c) {
     const int tmp = fixed (lit);
@@ -900,6 +917,8 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
       LOG (c, "satisfied by propagated unit %d", lit);
       mark_garbage (c);
       return false;
+    } else if (tmp < 0) {
+      found_units = true;
     } else if (!tmp)
       sorted.push_back (lit);
   }
@@ -920,7 +939,7 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
   // clause becomes assigned during propagation, we can stop.
   //
   LOG (c, "vivification checking");
-  stats.vivifychecks++;
+  stats.vivify_checks++;
 
   // If the decision 'level' is non-zero, then we can reuse decisions for
   // the previous candidate, and avoid re-propagating them.  In preliminary
@@ -976,7 +995,7 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
         const int decision = control[l].decision;
         if (-lit == decision) {
           LOG ("reusing decision %d at decision level %d", decision, l);
-          ++stats.vivifyreused;
+          ++stats.vivify_reused;
           if (++l > level)
             break;
         } else {
@@ -1056,9 +1075,9 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
 
     assert (!tmp);
 
-    stats.vivifydecs++;
+    stats.vivify_decisions++;
     vivify_assume (-lit);
-    LOG ("negated decision %d score %" PRId64 "", lit, noccs (lit));
+    LOG ("negated decision %d score %" PRIu64 "", lit, noccs (lit));
 
     if (!vivify_propagate (ticks)) {
       break; // hot-spot
@@ -1113,11 +1132,12 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
     LOG (clause, "learning clause");
     conflict = nullptr; // TODO dup from below
     vivify_strengthen (c, ticks);
+    found_units = false; // all units have already been removed
     res = true;
   } else if (subsume && c->redundant) {
     LOG (c, "vivification implied");
     mark_garbage (c);
-    ++stats.vivifyimplied;
+    ++stats.vivify_implied;
     res = true;
   } else if ((conflict || subsume) && !c->redundant && !redundant) {
     if (opts.vivifydemote) {
@@ -1127,8 +1147,9 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
       promote_clause (c, new_glue);
       res = false;
     } else {
+      LOG (c, "vivify implied by irredundant clauses");
       mark_garbage (c);
-      ++stats.vivifyimplied;
+      ++stats.vivify_implied;
       res = true;
     }
   } else if (subsume) {
@@ -1137,7 +1158,7 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
     assert (!c->redundant);
     assert (redundant);
     res = false;
-    ++stats.vivifyimplied;
+    ++stats.vivify_implied;
   } else {
     assert (level > 2);
     assert ((size_t) level == sorted.size ());
@@ -1145,7 +1166,7 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
     lrat_chain.clear ();
     assert (!subsume);
     if (!subsume && opts.vivifyinst) {
-      res = vivify_instantiate (sorted, c, lrat_stack, ticks);
+      res = vivify_instantiate (sorted, c, lrat_stack, ticks, found_units);
       assert (!conflict);
     } else {
       LOG ("cannot apply instantiation");
@@ -1165,18 +1186,19 @@ bool Internal::vivify_clause (Vivifier &vivifier, Clause *c) {
   ignore = nullptr;
 
   if (res) {
+    stats.vivified++;
     switch (vivifier.tier) {
     case Vivify_Mode::IRREDUNDANT:
-      ++stats.vivifiedirred;
+      ++stats.vivified_irr;
       break;
     case Vivify_Mode::TIER1:
-      ++stats.vivifiedtier1;
+      ++stats.vivified_tier1;
       break;
     case Vivify_Mode::TIER2:
-      ++stats.vivifiedtier2;
+      ++stats.vivified_tier2;
       break;
     case Vivify_Mode::TIER3:
-      ++stats.vivifiedtier3;
+      ++stats.vivified_tier3;
       break;
     }
   }
@@ -1229,7 +1251,7 @@ void Internal::vivify_build_lrat (
     for (const auto &other : *reason) {
       if (other == lit)
         continue;
-      Var &v = var (other);
+      const Var &v = var (other);
       Flags &f = flags (other);
       if (f.seen)
         continue;
@@ -1268,15 +1290,14 @@ inline void Internal::vivify_chain_for_units (int lit, Clause *reason) {
   lrat_chain.push_back (reason->id);
 }
 
+namespace {
 vivify_ref create_ref (Internal *internal, Clause *c) {
   LOG (c, "creating vivify_refs of clause");
   vivify_ref ref;
   ref.clause = c;
   ref.size = c->size;
-  for (int i = 0; i < COUNTREF_COUNTS; ++i)
-    ref.count[i] = 0;
   ref.vivify = c->vivify;
-  int lits[COUNTREF_COUNTS] = {0};
+  std::array<int, COUNTREF_COUNTS> lits = {0};
   for (int i = 0; i != std::min (COUNTREF_COUNTS, c->size); ++i) {
     int best = 0;
     unsigned best_count = 0;
@@ -1290,9 +1311,9 @@ vivify_ref create_ref (Internal *internal, Clause *c) {
           goto CONTINUE_WITH_NEXT_LITERAL;
       }
       {
-        const int64_t lit_count = internal->noccs (lit);
+        const uint64_t lit_count = internal->noccs (lit);
         assert (lit_count);
-        LOG ("checking literal %s with %" PRId64 " occurrences",
+        LOG ("checking literal %s with %" PRIu64 " occurrences",
              LOGLIT (lit), lit_count);
         if (lit_count <= best_count)
           continue;
@@ -1312,6 +1333,7 @@ vivify_ref create_ref (Internal *internal, Clause *c) {
   }
   return ref;
 }
+} // namespace
 /*------------------------------------------------------------------------*/
 inline void
 Internal::vivify_prioritize_leftovers (char tag, size_t prioritized,
@@ -1378,34 +1400,34 @@ void Internal::vivify_initialize (Vivifier &vivifier, int64_t &ticks) {
     // numbers. See the example above (search for '@1').
     //
     const int shift = 12 - c->size;
-    const int64_t score = shift < 1 ? 1 : (1l << shift); // @4
+    const uint64_t score = shift < 1 ? 1 : (1l << shift); // @4
     for (const auto lit : *c) {
       noccs (lit) += score;
     }
     LOG (c, "putting clause in candidates");
     if (!c->redundant)
-      vivifier.schedule_irred.push_back (c),
+      vivifier.schedule_irred ().push_back (c),
           prioritized_irred += (c->vivify);
     else if (c->glue <= tier1)
-      vivifier.schedule_tier1.push_back (c),
+      vivifier.schedule_tier1 ().push_back (c),
           prioritized_tier1 += (c->vivify);
     else if (c->glue <= tier2)
-      vivifier.schedule_tier2.push_back (c),
+      vivifier.schedule_tier2 ().push_back (c),
           prioritized_tier2 += (c->vivify);
     else
-      vivifier.schedule_tier3.push_back (c),
+      vivifier.schedule_tier3 ().push_back (c),
           prioritized_tier3 += (c->vivify);
     ++ticks;
   }
 
   vivify_prioritize_leftovers ('x', prioritized_irred,
-                               vivifier.schedule_irred);
+                               vivifier.schedule_irred ());
   vivify_prioritize_leftovers ('u', prioritized_tier1,
-                               vivifier.schedule_tier1);
+                               vivifier.schedule_tier1 ());
   vivify_prioritize_leftovers ('v', prioritized_tier2,
-                               vivifier.schedule_tier2);
+                               vivifier.schedule_tier2 ());
   vivify_prioritize_leftovers ('w', prioritized_tier3,
-                               vivifier.schedule_tier3);
+                               vivifier.schedule_tier3 ());
 
   if (opts.vivifyflush) {
     clear_watches ();
@@ -1435,9 +1457,10 @@ void Internal::vivify_initialize (Vivifier &vivifier, int64_t &ticks) {
 
   PHASE ("vivify", stats.vivifications,
          "[phase %c] leftovers out of %zu clauses", 'u',
-         vivifier.schedule_tier1.size ());
+         vivifier.schedule_tier1 ().size ());
 }
 
+namespace {
 inline std::vector<vivify_ref> &current_refs_schedule (Vivifier &vivifier) {
   return vivifier.refs_schedule;
 }
@@ -1445,16 +1468,16 @@ inline std::vector<vivify_ref> &current_refs_schedule (Vivifier &vivifier) {
 inline std::vector<Clause *> &current_schedule (Vivifier &vivifier) {
   switch (vivifier.tier) {
   case Vivify_Mode::TIER1:
-    return vivifier.schedule_tier1;
+    return vivifier.schedule_tier1 ();
     break;
   case Vivify_Mode::TIER2:
-    return vivifier.schedule_tier2;
+    return vivifier.schedule_tier2 ();
     break;
   case Vivify_Mode::TIER3:
-    return vivifier.schedule_tier3;
+    return vivifier.schedule_tier3 ();
     break;
   case Vivify_Mode::IRREDUNDANT:
-    return vivifier.schedule_irred;
+    return vivifier.schedule_irred ();
     break;
   }
   __builtin_unreachable ();
@@ -1465,7 +1488,7 @@ struct vivify_refcount_rank {
   vivify_refcount_rank (int j) : offset (j) {
     assert (offset < COUNTREF_COUNTS);
   }
-  typedef uint64_t Type;
+  using Type = uint64_t;
   Type operator() (const vivify_ref &a) const { return a.count[offset]; }
 };
 
@@ -1482,19 +1505,21 @@ struct vivify_refcount_smaller {
 };
 
 struct vivify_inversesize_rank {
-  vivify_inversesize_rank () {}
-  typedef uint64_t Type;
+  vivify_inversesize_rank () = default;
+  using Type = uint64_t;
   Type operator() (const vivify_ref &a) const { return ~a.size; }
 };
 
 struct vivify_inversesize_smaller {
-  vivify_inversesize_smaller () {}
+  vivify_inversesize_smaller () = default;
   bool operator() (const vivify_ref &a, const vivify_ref &b) const {
     const auto s = vivify_inversesize_rank () (a);
     const auto t = vivify_inversesize_rank () (b);
     return s < t;
   }
 };
+
+} // namespace
 
 /*------------------------------------------------------------------------*/
 // There are two modes of vivification, one using all clauses and one
@@ -1520,7 +1545,7 @@ void Internal::vivify_round (Vivifier &vivifier, int64_t ticks_limit) {
 
   assert (watching ());
 
-  int64_t ticks = 1 + schedule.size ();
+  const int64_t ticks = 1 + schedule.size ();
 
   // Sort candidates, with first to be tried candidate clause last, i.e.,
   // many occurrences and high score literals) as in the example explained
@@ -1568,21 +1593,21 @@ void Internal::vivify_round (Vivifier &vivifier, int64_t ticks_limit) {
   // Remember old values of counters to summarize after each round with
   // verbose messages what happened in that round.
   //
-  int64_t checked = stats.vivifychecks;
-  int64_t subsumed = stats.vivifysubs;
-  int64_t strengthened = stats.vivifystrs;
-  int64_t units = stats.vivifyunits;
+  int64_t checked = (int64_t) stats.vivify_checks;
+  int64_t subsumed = (int64_t) stats.vivify_subsumed;
+  int64_t strengthened = (int64_t) stats.vivify_strength;
+  int64_t units = (int64_t) stats.vivify_units;
 
-  int64_t scheduled = schedule.size ();
-  stats.vivifysched += scheduled;
+  auto scheduled = static_cast<int64_t> (schedule.size ());
+  stats.vivify_scheduled += scheduled;
 
   PHASE ("vivify", stats.vivifications,
          "scheduled %" PRId64 " clauses to be vivified %.0f%%", scheduled,
-         percent (scheduled, stats.current.irredundant));
+         percent (scheduled, stats.clauses_now_irr));
 
   // Limit the number of propagations during vivification as in 'probe'.
   //
-  const int64_t limit = ticks_limit - stats.ticks.vivify;
+  const int64_t limit = ticks_limit - stats.ticks_vivify;
   assert (limit >= 0);
 
   // the clauses might still contain set literals, so propagation since the
@@ -1612,7 +1637,8 @@ void Internal::vivify_round (Vivifier &vivifier, int64_t ticks_limit) {
     backtrack_without_updating_phases ();
 
   if (!unsat) {
-    int64_t still_need_to_be_vivified = schedule.size ();
+    const auto still_need_to_be_vivified =
+        static_cast<int64_t> (schedule.size ());
 #if 0
     // in the current round we have new_clauses_to_vivify @ leftovers from previous round There are
     // now two possibilities: (i) we consider all clauses as leftovers, or (ii) only the leftovers
@@ -1664,15 +1690,16 @@ void Internal::vivify_round (Vivifier &vivifier, int64_t ticks_limit) {
     }
   }
 
-  checked = stats.vivifychecks - checked;
-  subsumed = stats.vivifysubs - subsumed;
-  strengthened = stats.vivifystrs - strengthened;
-  units = stats.vivifyunits - units;
-
+  checked = (int64_t) stats.vivify_checks - checked;
   PHASE ("vivify", stats.vivifications,
          "checked %" PRId64 " clauses %.02f%% of %" PRId64
          " scheduled using %" PRIu64 " ticks",
          checked, percent (checked, scheduled), scheduled, vivifier.ticks);
+
+  subsumed = (int64_t) stats.vivify_subsumed - subsumed;
+  strengthened = (int64_t) stats.vivify_strength - strengthened;
+  units = (int64_t) stats.vivify_units - units;
+
   if (units)
     PHASE ("vivify", stats.vivifications,
            "found %" PRId64 " units %.02f%% of %" PRId64 " checked", units,
@@ -1689,13 +1716,14 @@ void Internal::vivify_round (Vivifier &vivifier, int64_t ticks_limit) {
 
   stats.subsumed += subsumed;
   stats.strengthened += strengthened;
-  stats.ticks.vivify += vivifier.ticks;
+  stats.ticks_vivify += vivifier.ticks;
+  stats.ticks += vivifier.ticks;
 
-  bool unsuccessful = !(subsumed + strengthened + units);
+  const bool unsuccessful = !(subsumed + strengthened + units);
   report (vivifier.tag, unsuccessful);
 }
 
-void set_vivifier_mode (Vivifier &vivifier, Vivify_Mode tier) {
+static void set_vivifier_mode (Vivifier &vivifier, Vivify_Mode tier) {
   vivifier.tier = tier;
   switch (tier) {
   case Vivify_Mode::TIER1:
@@ -1734,7 +1762,7 @@ bool Internal::vivify () {
     return false;
   if (!opts.vivify)
     return false;
-  if (!stats.current.irredundant)
+  if (!stats.clauses_now_irr)
     return false;
   if (level)
     backtrack ();
@@ -1745,7 +1773,8 @@ bool Internal::vivify () {
 
   private_steps = true;
 
-  START_SIMPLIFIER (vivify, VIVIFY);
+  MODE_SCOPE_SIMPLIFY (VIVIFY);
+  PROFILE_SCOPE_SIMPLIFY (vivify);
   stats.vivifications++;
 
   // the effort is normalized by dividing by sumeffort below, hence no need
@@ -1758,11 +1787,11 @@ bool Internal::vivify () {
           ? 0
           : (double) opts.vivifyirredeff;
   double sumeffort = tier1effort + tier2effort + tier3effort + irreffort;
-  if (!stats.current.redundant)
+  if (!stats.clauses_now_red)
     tier1effort = tier2effort = tier3effort = 0;
   if (!sumeffort)
     sumeffort = irreffort = 1;
-  int64_t total = totallimit - stats.ticks.vivify;
+  int64_t total = totallimit - stats.ticks_vivify;
 
   PHASE ("vivify", stats.vivifications,
          "vivification limit of %" PRId64 " ticks", total);
@@ -1790,18 +1819,19 @@ bool Internal::vivify () {
   // TODO: count against ticks.vivify directly instead of this unholy
   // shifting.
   vivify_initialize (vivifier, init_ticks);
-  stats.ticks.vivify += init_ticks;
-  int64_t limit = stats.ticks.vivify;
-  const double shared_effort = (double) init_ticks / 4.0;
+  stats.ticks_vivify += init_ticks;
+  stats.ticks += init_ticks;
+  int64_t limit = stats.ticks_vivify;
+  const int64_t shared_effort = (double) init_ticks / 4.0;
   if (opts.vivifytier1) {
     set_vivifier_mode (vivifier, Vivify_Mode::TIER1);
-    if (limit < stats.ticks.vivify)
-      limit = stats.ticks.vivify;
-    const double effort = (total * tier1effort) / sumeffort;
+    if (limit < stats.ticks_vivify)
+      limit = stats.ticks_vivify;
+    const int64_t effort = (total * tier1effort) / sumeffort;
     assert (std::numeric_limits<int64_t>::max () - (int64_t) effort >=
             limit);
     limit += effort;
-    if (limit - shared_effort > stats.ticks.vivify) {
+    if (limit - shared_effort > stats.ticks_vivify) {
       limit -= shared_effort;
       assert (limit >= 0);
       vivify_round (vivifier, limit);
@@ -1814,14 +1844,14 @@ bool Internal::vivify () {
   if (!unsat && tier2effort) {
     // save memory (well, not really as we
     // already reached the peak memory)
-    erase_vector (vivifier.schedule_tier1);
-    if (limit < stats.ticks.vivify)
-      limit = stats.ticks.vivify;
-    const double effort = (total * tier2effort) / sumeffort;
+    erase_vector (vivifier.schedule_tier1 ());
+    if (limit < stats.ticks_vivify)
+      limit = stats.ticks_vivify;
+    const int64_t effort = (total * tier2effort) / sumeffort;
     assert (std::numeric_limits<int64_t>::max () - (int64_t) effort >=
             limit);
     limit += effort;
-    if (limit - shared_effort > stats.ticks.vivify) {
+    if (limit - shared_effort > stats.ticks_vivify) {
       limit -= shared_effort;
       assert (limit >= 0);
       set_vivifier_mode (vivifier, Vivify_Mode::TIER2);
@@ -1833,14 +1863,14 @@ bool Internal::vivify () {
   }
 
   if (!unsat && tier3effort) {
-    erase_vector (vivifier.schedule_tier2);
-    if (limit < stats.ticks.vivify)
-      limit = stats.ticks.vivify;
-    const double effort = (total * tier3effort) / sumeffort;
+    erase_vector (vivifier.schedule_tier2 ());
+    if (limit < stats.ticks_vivify)
+      limit = stats.ticks_vivify;
+    const int64_t effort = (total * tier3effort) / sumeffort;
     assert (std::numeric_limits<int64_t>::max () - (int64_t) effort >=
             limit);
     limit += effort;
-    if (limit - shared_effort > stats.ticks.vivify) {
+    if (limit - shared_effort > stats.ticks_vivify) {
       limit -= shared_effort;
       assert (limit >= 0);
       set_vivifier_mode (vivifier, Vivify_Mode::TIER3);
@@ -1852,28 +1882,30 @@ bool Internal::vivify () {
   }
 
   if (!unsat && irreffort) {
-    erase_vector (vivifier.schedule_tier3);
-    if (limit < stats.ticks.vivify)
-      limit = stats.ticks.vivify;
-    const double effort = (total * irreffort) / sumeffort;
+    erase_vector (vivifier.schedule_tier3 ());
+    if (limit < stats.ticks_vivify)
+      limit = stats.ticks_vivify;
+    const int64_t effort = (total * irreffort) / sumeffort;
     assert (std::numeric_limits<int64_t>::max () - (int64_t) effort >=
             limit);
     limit += effort;
-    if (limit - shared_effort > stats.ticks.vivify) {
+    if (limit - shared_effort > stats.ticks_vivify) {
       limit -= shared_effort;
       assert (limit >= 0);
       set_vivifier_mode (vivifier, Vivify_Mode::IRREDUNDANT);
-      const int old = stats.vivifystrirr;
-      const int old_tried = stats.vivifychecks;
+      const int64_t old = (int64_t) stats.vivify_strength_irr;
+      const int64_t old_tried = (int64_t) stats.vivify_checks;
       vivify_round (vivifier, limit);
-      if (stats.vivifychecks - old_tried == 0 ||
-          (float) (stats.vivifystrirr - old) /
-                  (float) (stats.vivifychecks - old_tried) <
-              0.01) {
+      const int64_t vivify_tried = stats.vivify_checks - old_tried;
+      const int64_t vivified = stats.vivify_strength_irr - old;
+      unsigned vivifyirredbumpdel = opts.vivifyirredbumpdel;
+      if (vivifyirredbumpdel == 1 &&
+          relative (vivified, vivify_tried) < 0.01)
+        vivifyirredbumpdel = 0;
+      if (vivifyirredbumpdel)
         delaying_vivify_irredundant.bumpreasons.bump_delay ();
-      } else {
+      else
         delaying_vivify_irredundant.bumpreasons.reduce_delay ();
-      }
     } else {
       delaying_vivify_irredundant.bumpreasons.bump_delay ();
       LOG ("building the schedule already used our entire ticks budget for "
@@ -1882,7 +1914,6 @@ bool Internal::vivify () {
   }
 
   reset_noccs ();
-  STOP_SIMPLIFIER (vivify, VIVIFY);
 
   private_steps = false;
   assert (!ignore);

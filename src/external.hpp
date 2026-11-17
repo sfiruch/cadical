@@ -3,8 +3,12 @@
 
 /*------------------------------------------------------------------------*/
 
+#include "exttoint.hpp"
 #include "range.hpp"
+#include <climits>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 #include <vector>
 
@@ -44,10 +48,16 @@ using namespace std;
 /*------------------------------------------------------------------------*/
 
 struct Clause;
-struct Internal;
+class ClauseIterator;
 struct CubesWithStatus;
+class ExternalPropagator;
+class FixedAssignmentListener;
+struct Internal;
+class Learner;
+class Terminator;
+class WitnessIterator;
 
-/*------------------------------------------------------------------------*/
+#include "exttoint.hpp"
 
 /*------------------------------------------------------------------------*/
 
@@ -61,7 +71,11 @@ struct External {
   size_t vsize; // Allocated external size.
 
   vector<bool> vals; // Current external (extended) assignment.
-  vector<int> e2i;   // External 'idx' to internal 'lit'.
+
+public:
+  // CaDiCaL::hashmap<int, int, IntFirstHash, IntSecondHash, IntTumb,
+  // IntEqualTo> e2i; // External 'idx' to internal 'lit'.
+  ExtToInt e2i;
 
   vector<int> assumptions; // External assumptions.
   vector<int> constraint;  // External constraint. Terminated by zero.
@@ -79,9 +93,19 @@ struct External {
 
   bool extended; // Have been extended.
   bool concluded;
-  vector<int> extension; // Solution reconstruction extension stack.
 
-  vector<bool> witness; // Literal witness on extension stack.
+  size_t fragmented_clause_data = 0;
+  vector<int> clause_data;
+
+  struct WitnessEntry {
+    int ewit;
+    int blit;
+    uint64_t idx;
+  };
+
+  vector<WitnessEntry> witness_data;
+
+  vector<bool> witness; // Non-emptyness flag for witness stacks
   vector<bool> tainted; // Literal tainted in adding literals.
 
   vector<bool> ervars; // Variables added through Extended Resolution.
@@ -108,6 +132,7 @@ struct External {
   // If there is an external propagator.
 
   ExternalPropagator *propagator;
+  FILE *trace_api_file; // Only for user propagator interaction tracing
 
   vector<bool> is_observed; // Quick flag for each external variable
 
@@ -122,10 +147,10 @@ struct External {
   void reset_observed_vars ();
 
   bool observed (int elit);
-  bool is_witness (int elit);
   bool is_decision (int elit);
 
   void force_backtrack (int new_level);
+  bool force_unassign (int elit);
 
   //----------------------------------------------------------------------//
 
@@ -139,6 +164,7 @@ struct External {
   // larger than 'max_var' are not molten and can thus always be used in the
   // future.  Only needed to check and debug old style freeze semantics.
   //
+  bool checkfrozen;
   vector<bool> moltentab;
 
   //----------------------------------------------------------------------//
@@ -167,35 +193,54 @@ struct External {
   inline bool is_valid_input (int elit) {
     assert (elit);
     assert (elit != INT_MIN);
-    int eidx = abs (elit);
-    return eidx > max_var || !ervars[eidx];
+    size_t eidx = abs (elit);
+    return eidx > (size_t) max_var || !ervars[eidx];
+  }
+  inline bool check_frozen (int elit) {
+    if (!checkfrozen)
+      return true;
+    assert (elit);
+    assert (elit != INT_MIN);
+    size_t eidx = abs (elit);
+    if (eidx >= moltentab.size ())
+      return true;
+    return !moltentab[eidx];
   }
 
+  inline int internal_lit (int elit) const {
+    return e2i.find_or_default (elit, 0);
+  }
   /*----------------------------------------------------------------------*/
+  void push_clause_on_extension (int iwit, Clause *);
+  void push_clause_on_extension (const int64_t id, int iwit,
+                                 const vector<int> &c);
+  void push_binary_clause_on_extension (int64_t id, int iwit, int other);
+  void push_external_clause_on_extension (const vector<int> &c,
+                                          const vector<int> &w, int64_t id);
+  /* ---------------------------------------------------------------------*/
+  void create_cube_stack (const vector<int> &iwit_cube);
+  void push_cube_clause (Clause *c);
+  void terminate_cube_stack ();
 
-  // The following five functions push individual literals or clauses on the
-  // extension stack.  They all take internal literals as argument, and map
-  // them back to external literals first, before pushing them on the stack.
+  void create_cube_stack_and_push_external_clause (
+      const vector<int> &clause, const vector<int> &ewit_cube, int64_t id);
+  /* ------------------------------------------------------------------------
+   */
+  void push_external_clause_and_witness_on_extension (
+      const vector<int> &clause, const vector<int> &witness, int64_t id);
+  /* ------------------------------------------------------------------------
+   */
+  struct ExtendStats {
+    int64_t extension_size, updated, flipped, extend_blocked, clauses_read;
+  };
 
-  void push_zero_on_extension_stack ();
-
-  // Our general version of extension stacks always pushes a set of witness
-  // literals (for variable elimination the literal of the eliminated
-  // literal and for blocked clauses the blocking literal) followed by all
-  // the clause literals starting with and separated by zero.
-  //
-  void push_clause_literal_on_extension_stack (int ilit);
-  void push_witness_literal_on_extension_stack (int ilit);
-
-  void push_clause_on_extension_stack (Clause *);
-  void push_clause_on_extension_stack (Clause *, int witness);
-  void push_binary_clause_on_extension_stack (int64_t id, int witness,
-                                              int other);
+  void extend_cube_stack (uint32_t ss_idx, ExtendStats &stats);
 
   // The main 'extend' function which extends an internal assignment to an
-  // external assignment using the extension stack (and sets 'extended').
+  // external assignment using the witness stacks (and sets 'extended').
   //
   void extend ();
+
   void conclude_sat ();
 
   /*----------------------------------------------------------------------*/
@@ -229,19 +274,22 @@ struct External {
   }
 
   /*----------------------------------------------------------------------*/
+  struct RestoreStats {
+    int64_t total, satisfied, restored;
+  };
 
-  void push_external_clause_and_witness_on_extension_stack (
-      const vector<int> &clause, const vector<int> &witness, int64_t id);
+  void defragment_clause_data ();
 
-  void push_id_on_extension_stack (int64_t id);
+  void restore_clause (vector<int>::const_iterator begin,
+                       vector<int>::const_iterator end, const int64_t id,
+                       const int ewit, const int blit);
 
-  // Restore a clause, which was pushed on the extension stack.
-  void restore_clause (const vector<int>::const_iterator &begin,
-                       const vector<int>::const_iterator &end,
-                       const int64_t id);
+  bool restore_cube_stack (uint32_t ss_idx, vector<bool> &skipped_witnesses,
+                           RestoreStats &clauses);
 
-  void restore_clauses ();
+  void restore ();
 
+  bool is_witness (int);
   /*----------------------------------------------------------------------*/
 
   // Explicitly freeze and melt literals (instead of just freezing
@@ -270,11 +318,14 @@ struct External {
   void enlarge (int new_max_var); // Enlarge allocated 'vsize'.
   void init (int new_max_var,
              bool extension = false); // Initialize up-to 'new_max_var'.
+  void reserve (int new_max_var);     // Reserves up-to 'new_max_var'.
 
   int internalize (
       int,
       bool extension = false); // Translate external to internal literal.
 
+  /*----------------------------------------------------------------------*/
+  int declare_var (int new_var, bool extension);
   /*----------------------------------------------------------------------*/
 
   // According to the CaDiCaL API contract (as well as IPASIR) we have to
@@ -355,6 +406,8 @@ struct External {
     return val ? elit : -elit;
   }
 
+  signed char current_val (int elit);
+
   bool flip (int elit);
   bool flippable (int elit);
 
@@ -387,7 +440,7 @@ struct External {
   void conclude_unknown ();
 
   /*----------------------------------------------------------------------*/
-  int lookahead ();
+  int lookahead (int &);
   CaDiCaL::CubesWithStatus generate_cubes (int, int);
 
   int fixed (int elit) const; // Implemented in 'internal.hpp'.
@@ -404,12 +457,14 @@ struct External {
 
   bool traverse_all_frozen_units_as_clauses (ClauseIterator &);
   bool traverse_all_non_frozen_units_as_witnesses (WitnessIterator &);
+  bool traverse_cube_stack (WitnessIterator &it, uint32_t ss_idx);
   bool traverse_witnesses_backward (WitnessIterator &);
   bool traverse_witnesses_forward (WitnessIterator &);
 
   /*----------------------------------------------------------------------*/
 
-  // Copy flags for determining preprocessing state.
+  // Copy flags for determining preprocessing state, including if a variable
+  // is an extension.
 
   void copy_flags (External &other) const;
 

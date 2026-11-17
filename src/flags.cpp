@@ -1,6 +1,18 @@
+#include "flags.hpp"
 #include "internal.hpp"
 
 namespace CaDiCaL {
+
+void Internal::mark_declared (int lit) {
+  Flags &f = flags (lit);
+  assert (f.status == Flags::UNUSED);
+  f.status = Flags::DECLARED;
+  ++stats.vars_declared;
+  --stats.vars_unused;
+  LOG ("declaring new %d (max_var: %d, unused: %" PRId64
+       ", active: %" PRId64 ")",
+       lit, max_var, stats.vars_unused, stats.vars_active);
+}
 
 void Internal::mark_fixed (int lit) {
   if (external->fixed_listener) {
@@ -11,14 +23,16 @@ void Internal::mark_fixed (int lit) {
       external->fixed_listener->notify_fixed_assignment (elit);
   }
   Flags &f = flags (lit);
+  if (f.status == Flags::DECLARED)
+    mark_active (lit);
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::FIXED;
   LOG ("fixed %d", abs (lit));
-  stats.all.fixed++;
-  stats.now.fixed++;
-  stats.inactive++;
-  assert (stats.active);
-  stats.active--;
+  stats.vars_all_fixed++;
+  stats.vars_now_fixed++;
+  stats.vars_inactive++;
+  assert (stats.vars_active);
+  stats.vars_active--;
   assert (!active (lit));
   assert (f.fixed ());
 
@@ -36,11 +50,13 @@ void Internal::mark_eliminated (int lit) {
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::ELIMINATED;
   LOG ("eliminated %d", abs (lit));
-  stats.all.eliminated++;
-  stats.now.eliminated++;
-  stats.inactive++;
-  assert (stats.active);
-  stats.active--;
+  if (f.factored)
+    stats.factored_eliminated++;
+  stats.vars_all_elim++;
+  stats.vars_now_eliminated++;
+  stats.vars_inactive++;
+  assert (stats.vars_active);
+  stats.vars_active--;
   assert (!active (lit));
   assert (f.eliminated ());
 }
@@ -50,11 +66,11 @@ void Internal::mark_pure (int lit) {
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::PURE;
   LOG ("pure %d", abs (lit));
-  stats.all.pure++;
-  stats.now.pure++;
-  stats.inactive++;
-  assert (stats.active);
-  stats.active--;
+  stats.vars_all_pure++;
+  stats.vars_now_pure++;
+  stats.vars_inactive++;
+  assert (stats.vars_active);
+  stats.vars_active--;
   assert (!active (lit));
   assert (f.pure ());
 }
@@ -64,25 +80,25 @@ void Internal::mark_substituted (int lit) {
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::SUBSTITUTED;
   LOG ("substituted %d", abs (lit));
-  stats.all.substituted++;
-  stats.now.substituted++;
-  stats.inactive++;
-  assert (stats.active);
-  stats.active--;
+  stats.vars_all_substituted++;
+  stats.vars_now_substituted++;
+  stats.vars_inactive++;
+  assert (stats.vars_active);
+  stats.vars_active--;
   assert (!active (lit));
   assert (f.substituted ());
 }
 
 void Internal::mark_active (int lit) {
   Flags &f = flags (lit);
-  assert (f.status == Flags::UNUSED);
+  assert (f.status == Flags::DECLARED);
   f.status = Flags::ACTIVE;
-  LOG ("activate %d previously unused", abs (lit));
-  assert (stats.inactive);
-  stats.inactive--;
-  assert (stats.unused);
-  stats.unused--;
-  stats.active++;
+  LOG ("activate %d previously declared", abs (lit));
+  assert (stats.vars_inactive);
+  stats.vars_inactive--;
+  assert (stats.vars_declared);
+  stats.vars_declared--;
+  stats.vars_active++;
   assert (active (lit));
 }
 
@@ -98,8 +114,8 @@ void Internal::reactivate (int lit) {
   default:
   case Flags::ELIMINATED:
     assert (f.status == Flags::ELIMINATED);
-    assert (stats.now.eliminated > 0);
-    stats.now.eliminated--;
+    assert (stats.vars_now_eliminated > 0);
+    stats.vars_now_eliminated--;
 #ifdef LOGGING
     msg = "eliminated";
 #endif
@@ -108,15 +124,15 @@ void Internal::reactivate (int lit) {
 #ifdef LOGGING
     msg = "substituted";
 #endif
-    assert (stats.now.substituted > 0);
-    stats.now.substituted--;
+    assert (stats.vars_now_substituted > 0);
+    stats.vars_now_substituted--;
     break;
   case Flags::PURE:
 #ifdef LOGGING
     msg = "pure literal";
 #endif
-    assert (stats.now.pure > 0);
-    stats.now.pure--;
+    assert (stats.vars_now_pure > 0);
+    stats.vars_now_pure--;
     break;
   }
 #ifdef LOGGING
@@ -126,10 +142,10 @@ void Internal::reactivate (int lit) {
   f.status = Flags::ACTIVE;
   f.sweep = false;
   assert (active (lit));
-  stats.reactivated++;
-  assert (stats.inactive > 0);
-  stats.inactive--;
-  stats.active++;
+  stats.vars_reactivated++;
+  assert (stats.vars_inactive > 0);
+  stats.vars_inactive--;
+  stats.vars_active++;
 }
 
 } // namespace CaDiCaL

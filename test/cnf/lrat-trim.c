@@ -1,4 +1,4 @@
-static const char *version = "0.2.1-dev";
+static const char *version = "0.2.1-rc3";
 
 // clang-format off
 
@@ -206,6 +206,8 @@ static struct {
   struct int_map used;
   struct int_map map;
 } clauses;
+
+static double start;
 
 static void die (const char *, ...) __attribute__ ((format (printf, 1, 2)));
 static void prr (const char *, ...) __attribute__ ((format (printf, 1, 2)));
@@ -756,7 +758,7 @@ static inline void write_size_t (size_t i) {
 #include <sys/time.h>
 #include <unistd.h>
 
-static double process_time () {
+static double process_time (void) {
   struct rusage u;
   double res;
   (void) getrusage (RUSAGE_SELF, &u);
@@ -765,10 +767,23 @@ static double process_time () {
   return res;
 }
 
+static double real_time (void) {
+  struct timeval tv;
+  double res = 0;
+  if (!gettimeofday (&tv, 0))
+    res = 1e-6 * tv.tv_usec + tv.tv_sec;
+  return res;
+}
+
 static size_t maximum_resident_set_size (void) {
   struct rusage u;
-  (void) getrusage (RUSAGE_SELF, &u);
-  return ((size_t) u.ru_maxrss) << 10;
+  if (getrusage (RUSAGE_SELF, &u))
+    return 0;
+  size_t res = u.ru_maxrss;
+#ifndef __APPLE__
+  res <<= 10;
+#endif
+  return res;
 }
 
 static double mega_bytes (void) {
@@ -867,8 +882,18 @@ static void mark_used_literals (int *literals) {
   }
 }
 
-static void check_clause_extension (int id, int *literals,
-                                    int *antecedents) {
+static void unmark_used_literals (int *literals) {
+  for (int *l = literals, lit; (lit = *l); l++) {
+    size_t *count = &COUNT (lit);
+    assert (*count);
+    if (*count != SIZE_MAX)
+      (*count)--;
+  }
+}
+
+static void check_strict_clause_extension (int id, int *literals,
+                                           int *antecedents) {
+  assert (strict);
   if (!*antecedents) {
     bool pure = false;
     for (int *l = literals, lit; (lit = *l); l++) {
@@ -884,25 +909,23 @@ static void check_clause_extension (int id, int *literals,
   } else {
     int ext = 0;
     for (int *l = literals, lit; (lit = *l); l++) {
-      signed char value = assigned_literal (lit);
-      size_t count = COUNT (lit);
-      if (!count) {
+      int idx = abs (lit);
+      signed char *m = &ACCESS (variables.marks, idx);
+      signed char mark = *m;
+      if (lit < 0)
+        mark = -mark;
+      if (!ext) {
         ext = lit;
-        dbg ("no occurrence of literal '%d' so far", lit);
+        dbg ("extension check on first literal '%d'", lit);
       }
-      if (value < 0) {
-        if (strict)
-          crr (id, "duplicated literal '%d'", lit);
-        dbg ("skipping duplicated literal '%d' in clause '%d'", lit, id);
-        continue;
-      }
-      if (strict && value > 0)
+      if (mark < 0)
+        crr (id, "duplicated literal '%d'", lit);
+      if (mark > 0)
         crr (id, "tautology on '%d'", lit);
-      assert (!value);
-      assign_literal (-lit);
+      *m = lit < 0 ? -1 : 1;
     }
     if (!ext)
-      crr (id, "no pure literal for extension check "
+      crr (id, "no literal for extension check "
                "(empty clause)");
     size_t numants = COUNT (-ext);
     for (int *a = antecedents, aid; (aid = *a); a++) {
@@ -915,7 +938,7 @@ static void check_clause_extension (int id, int *literals,
       if (ACCESS (clauses.marked, -aid)++) {
         if (strict)
           crr (id, "multiple occurrence of (negative) id '%d'", aid);
-        dbg ("skipping multple occurrence of '%d", aid);
+        dbg ("skipping multiple occurrence of '%d", aid);
       } else if (numants)
         numants--;
       else
@@ -935,6 +958,94 @@ static void check_clause_extension (int id, int *literals,
           hasnotext = true;
           continue;
         }
+        int idx = abs (lit);
+        signed char *m = &ACCESS (variables.marks, idx);
+        signed char mark = *m;
+        if (lit < 0 && mark > 0 && !blocked)
+          blocked = lit;
+        else if (lit > 0 && mark < 0 && !blocked)
+          blocked = lit;
+      }
+      if (!hasnotext)
+        crr (id, "antecedent %d does not contain extension literal %d",
+             -aid, -ext);
+      if (!blocked)
+        crr (id, "antecedent %d not blocked in extension clause", -aid);
+    }
+    for (int *a = antecedents, aid; (aid = *a); a++)
+      ACCESS (clauses.marked, -aid) = 0;
+    if (numants)
+      crr (id, "occurrences of '%d' not equal antecendents (missing %zd)",
+           -ext, numants);
+    for (int *l = literals, lit; (lit = *l); l++) {
+      assert (lit != INT_MIN);
+      int idx = abs (lit);
+      signed char *m = &ACCESS (variables.marks, idx);
+      assert (*m);
+      *m = 0;
+    }
+  }
+}
+
+static void check_clause_extension (int id, int *literals,
+                                    int *antecedents) {
+  assert (!strict);
+  if (!*antecedents) {
+    bool pure = false;
+    for (int *l = literals, lit; (lit = *l); l++) {
+      const size_t count = COUNT (-lit);
+      if (!count) {
+        pure = true;
+        break;
+      }
+    }
+    if (!pure)
+      crr (id, "empty antecedents "
+               "(for extensions the clause should be pure)");
+  } else {
+    int ext = 0;
+    for (int *l = literals, lit; (lit = *l); l++) {
+      signed char value = assigned_literal (lit);
+      if (!ext) {
+        ext = lit;
+        dbg ("extension check on first literal '%d'", lit);
+      }
+      if (value < 0) {
+        dbg ("skipping duplicated literal '%d' in clause '%d'", lit, id);
+        continue;
+      }
+      assert (!value);
+      assign_literal (-lit);
+    }
+    if (!ext)
+      crr (id, "no literal for extension check "
+               "(empty clause)");
+    size_t numants = COUNT (-ext);
+    for (int *a = antecedents, aid; (aid = *a); a++) {
+      if (aid > 0)
+        crr (id,
+             "positive id '%d' in extension check not supported "
+             "(expected only negative antecedents)",
+             aid);
+      ADJUST (clauses.marked, -aid);
+      if (ACCESS (clauses.marked, -aid)++) {
+        dbg ("skipping multiple occurrence of '%d", aid);
+      } else if (numants)
+        numants--;
+      else
+        crr (id,
+             "more antecedents than occurrences of '%d' "
+             "(or more than %zd)",
+             -ext, SIZE_MAX);
+      int *als = ACCESS (clauses.literals, -aid);
+      dbgs (als, "checking blocked antecedent %d clause", -aid);
+      bool hasnotext = false;
+      int blocked = 0;
+      for (int *l = als, lit; (lit = *l); l++) {
+        if (lit == -ext) {
+          hasnotext = true;
+          continue;
+        }
         signed char value = assigned_literal (lit);
         if (value > 0 && !blocked) {
           blocked = lit;
@@ -949,7 +1060,7 @@ static void check_clause_extension (int id, int *literals,
     for (int *a = antecedents, aid; (aid = *a); a++)
       ACCESS (clauses.marked, -aid) = 0;
     if (numants)
-      crr (id, "occurrences of '%d' not equal antecendents (missing %zd)",
+      crr (id, "occurrences of '%d' not equal antecedents (missing %zd)",
            -ext, numants);
     backtrack ();
   }
@@ -1017,6 +1128,8 @@ static void check_clause_non_strictly_by_propagation (int id, int *literals,
     int unit = 0;
     for (int *l = als, lit; (lit = *l); l++) {
       signed char value = assigned_literal (lit);
+      if (unit == -lit)
+        crr (id, "antecedent '%d' is tautological", aid);
       if (value < 0)
         continue;
       if (unit && unit != lit)
@@ -1048,18 +1161,20 @@ static void check_clause_strictly_by_resolution (int id, int *literals,
   assert (strict);
   assert (EMPTY (trail));
 
+  import_literals (literals);
+
   int *a = antecedents, aid;
   while ((aid = *a))
     if (aid < 0 && norat)
       crr (id, "checking negative RAT antecedent '%d' not supported", aid);
     else if (aid < 0)
-      return check_clause_extension (id, literals, antecedents);
+      return check_strict_clause_extension (id, literals, antecedents);
     else
       a++;
 
   // empty antecedents.
   if (!(a - antecedents) && !norat)
-    return check_clause_extension (id, literals, antecedents);
+    return check_strict_clause_extension (id, literals, antecedents);
 
   size_t resolvent_size = 0;
   bool first = true;
@@ -1138,8 +1253,7 @@ static void check_clause (int id, int *literals, int *antecedents) {
     check_clause_strictly_by_resolution (id, literals, antecedents);
   else
     check_clause_non_strictly_by_propagation (id, literals, antecedents);
-  if (!norat) // TODO: lazy counts when needed (supercedes norat option
-              // (--rup))
+  if (!norat) // lazy counts when needed (supercedes norat option --rup)
     mark_used_literals (literals);
 }
 
@@ -1149,19 +1263,21 @@ static inline bool is_original_clause (int id) {
          abs_id < first_clause_added_in_proof;
 }
 
-// Apparently the hot-spot of the parser is checking the loop condition for
-// integer parsing which reads the next character from an input file and
-// then asks 'isdigit' whether the integer parsed at this point should be
-// extended by another digit or the first character (space or new-line)
+// Apparently the hot-spot of the parser is checking the loop condition
+// for integer parsing which reads the next character from an input file
+// and then asks 'isdigit' whether the integer parsed at this point should
+// be extended by another digit or the first character (space or new-line)
 // after the integer has been reached.  It seems that the claimed fast
-// 'isdigit' from 'libc', which we assume is implemented by a table look-up,
-// prevents some local compiler optimization as soon the character reading
-// code is also inlined (which even for 'getc_unlocked' happened).
+// 'isdigit' from 'libc', which we assume is implemented by a table
+// look-up, prevents some local compiler optimization as soon the
+// character reading code is also inlined (which even for 'getc_unlocked'
+// happened).
 
-// Using the good old range based checked (assuming an ASCII encoding) seems
-// to help the compiler to produce better code (around 5% faster).
+// Using the good old range based checked (assuming an ASCII encoding)
+// seems to help the compiler to produce better code (around 5% faster).
 
-// We use 'ISDIGIT' instead of 'isdigit' as the later can itself be a macro.
+// We use 'ISDIGIT' instead of 'isdigit' as the later can itself be a
+// macro.
 
 #define ISDIGIT faster_than_default_isdigit
 
@@ -1172,12 +1288,12 @@ static inline bool faster_than_default_isdigit (int ch) {
   return '0' <= ch && ch <= '9';
 }
 
-// If the user does have huge integers (larger than 'INT_MAX') in proofs we
-// still want to print those integers in the triggered error message.  This
-// function takes the integer 'n' parsed so far and the digit 'ch'
+// If the user does have huge integers (larger than 'INT_MAX') in proofs
+// we still want to print those integers in the triggered error message.
+// This function takes the integer 'n' parsed so far and the digit 'ch'
 // triggering the overflow as argument and then continues reading digits
-// from the input file (for a while) and prints the complete parsed integer
-// string to a statically allocated buffer which is returned.
+// from the input file (for a while) and prints the complete parsed
+// integer string to a statically allocated buffer which is returned.
 
 static const char *exceeds_int_max (int n, int ch) {
   static char buffer[32];
@@ -1359,7 +1475,8 @@ static void parse_cnf () {
         statistics.clauses.checked.empty++;
         empty_clause = parsed_clauses;
       }
-      mark_used_literals (ACCESS (clauses.literals, parsed_clauses));
+      if (!norat)
+        mark_used_literals (ACCESS (clauses.literals, parsed_clauses));
     }
     if (ch == 'c')
       goto SKIP_COMMENT_AFTER_HEADER;
@@ -1481,6 +1598,8 @@ static void delete_antecedent (int other, bool binary, size_t info) {
     if (!relax || other < SIZE (clauses.literals)) {
 
       int **l = &ACCESS (clauses.literals, other);
+      if (status > 0 && !norat && (checking || is_original_clause (other)))
+        unmark_used_literals (*l);
       free (*l);
       *l = 0;
     }
@@ -1519,10 +1638,11 @@ static void parse_proof () {
       prr ("unexpected first byte '0x%02x'", (unsigned) ch);
   }
 
-  // To track in the binary proof format we use byte offsets instead of line
-  // numbers.  This information is used in debugging and error messages and
-  // 'trick' is used to tell this difference (using 'byte' vs. 'line').  For
-  // the binary format we also do not have deletion line identifiers.
+  // To track in the binary proof format we use byte offsets instead of
+  // line numbers.  This information is used in debugging and error
+  // messages and 'trick' is used to tell this difference (using 'byte'
+  // vs. 'line').  For the binary format we also do not have deletion line
+  // identifiers.
 
   const bool binary = input.binary;
 
@@ -2663,7 +2783,7 @@ static void print_banner () {
     return;
   printf (
       "c LRAT-TRIM Version %s trims LRAT proofs\n"
-      "c Copyright (c) 2023-2025 A. Biere, F. Pollitt, Univ. Freiburg\n",
+      "c Copyright (c) 2023-2026 A. Biere, F. Pollitt, Univ. Freiburg\n",
       version);
   fflush (stdout);
 }
@@ -2711,11 +2831,12 @@ static void print_mode () {
 }
 
 static void print_statistics () {
-  double t = process_time ();
+  double p = process_time ();
+  double r = real_time () - start;
   if (checking) {
     msg ("checked %zu clauses %.0f per second",
          statistics.clauses.checked.total,
-         average (statistics.clauses.checked.total, t));
+         average (statistics.clauses.checked.total, p));
     msg ("resolved %zu clauses %.2f per checked clause",
          statistics.clauses.resolved,
          average (statistics.clauses.resolved,
@@ -2731,8 +2852,9 @@ static void print_statistics () {
            average (statistics.literals.assigned,
                     statistics.clauses.checked.total));
   }
-  msg ("maximum memory usage of %.0f MB", mega_bytes ());
-  msg ("total time of %.2f seconds", t);
+  msg ("maximum-resident-set-size of %.0f MB", mega_bytes ());
+  msg ("process-time of %.2f seconds (%.2f %%)", p, percent (p, r));
+  msg ("wall-clock-time of %.2f seconds", r);
 }
 
 static void close_coverage () {
@@ -2743,6 +2865,7 @@ static void close_coverage () {
 }
 
 int main (int argc, char **argv) {
+  start = real_time ();
   options (argc, argv);
   open_input_files ();
   print_banner ();

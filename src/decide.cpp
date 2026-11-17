@@ -15,7 +15,7 @@ int Internal::next_decision_variable_on_queue () {
   while (val (res))
     res = link (res).prev, searched++;
   if (searched) {
-    stats.searched += searched;
+    stats.decision_searched += searched;
     update_queue_unassigned (res);
   }
   LOG ("next queue decision variable %d bumped %" PRId64 "", res,
@@ -45,7 +45,7 @@ void Internal::start_random_sequence () {
   assert (stable || opts.randecfocused);
   assert (!randomized_deciding);
 
-  const uint64_t count = ++stats.randec.random_decision_phases;
+  const uint64_t count = ++stats.decision_random_phase;
   const unsigned length = opts.randeclength * log (count + 10);
   VERBOSE (3,
            "starting random decision sequence "
@@ -53,8 +53,8 @@ void Internal::start_random_sequence () {
            stats.conflicts, length);
   randomized_deciding = length;
 
-  const double delta = stats.randec.random_decision_phases *
-                       log (stats.randec.random_decision_phases);
+  const double delta =
+      stats.decision_random_phase * log (stats.decision_random_phase);
   lim.random_decision = stats.conflicts + delta * opts.randecint;
   VERBOSE (3,
            "next random decision sequence "
@@ -86,7 +86,7 @@ int Internal::next_random_decision () {
   LOG ("searching for random decision");
   Random random (internal->opts.seed);
   random += stats.decisions;
-  ++stats.randec.random_decisions;
+  ++stats.decision_random;
   for (;;) {
     int idx = 1 + (random.next () % max_var);
     LOG ("trying lit %s", LOGLIT (idx));
@@ -97,6 +97,8 @@ int Internal::next_random_decision () {
       continue;
     */
     if (val (idx))
+      continue;
+    if (flags (idx).unused ())
       continue;
     return idx;
   }
@@ -144,7 +146,7 @@ int Internal::decide_phase (int idx, bool target) {
   if (!phase) {
     // ported from kissat where it does not seem very useful
     if (opts.stubbornIOfocused && opts.rephase == 2)
-      switch ((stats.rephased.total >> 1) & 7) {
+      switch ((stats.rephased >> 1) & 7) {
       case 1:
         phase = initial_phase;
         break;
@@ -191,15 +193,17 @@ void Internal::new_trail_level (int lit) {
 /*------------------------------------------------------------------------*/
 
 bool Internal::satisfied () {
+  check_var_stats ();
+  LOG ("checking satisfied");
   if ((size_t) level < assumptions.size () + (!!constraint.size ()))
     return false;
-  if (num_assigned < (size_t) max_var)
+  if (num_assigned + stats.vars_unused < (size_t) max_var)
     return false;
-  assert (num_assigned == (size_t) max_var);
+  assert (num_assigned + stats.vars_unused == (size_t) max_var);
   if (propagated < trail.size ())
     return false;
   size_t assigned = num_assigned;
-  return (assigned == (size_t) max_var);
+  return (assigned + stats.vars_unused == (size_t) max_var);
 }
 
 bool Internal::better_decision (int lit, int other) {
@@ -211,12 +215,51 @@ bool Internal::better_decision (int lit, int other) {
     return btab[lit_idx] > btab[other_idx];
 }
 
-// Search for the next decision and assign it to the saved phase.  Requires
+#if defined(CHECKMISSED) && 1
+#define CHECK_MISSED() \
+  do { \
+    for (auto *c : clauses) { \
+      if (c->garbage) \
+        continue; \
+      bool SAT = false; \
+      int PROP = 0; \
+      for (auto &lit : *c) { \
+        if (val (lit) > 0) { \
+          SAT = true; \
+          break; \
+        } else if (val (lit) < 0) { \
+          continue; \
+        } else if (!PROP) { \
+          PROP = lit; \
+        } else { \
+          PROP = 0; \
+          break; \
+        } \
+      } \
+      if (SAT || !PROP) \
+        continue; \
+      LOG (c, "fatal not propagated"); \
+      assert (false); \
+    } \
+  } while (0)
+#else
+#define CHECK_MISSED() \
+  do { \
+  } while (0)
+#endif
+
+// Search for the next decision and assign it to the saved phase. Requires
 // that not all variables are assigned.
 
 int Internal::decide () {
   assert (!satisfied ());
-  START (decide);
+  PROFILE_SCOPE (decide);
+  // during interaction with the user propagator, new variables can be added
+  // (for example by observed).
+  if (!imports.empty ())
+    activating_all_new_imported_literals ();
+  check_queue ();
+  CHECK_MISSED ();
   int res = 0;
   if ((size_t) level < assumptions.size ()) {
     const int lit = assumptions[level];
@@ -320,28 +363,26 @@ int Internal::decide () {
 #endif
 
   } else {
-
+    check_queue ();
     int decision = ask_decision ();
     if ((size_t) level < assumptions.size () ||
         ((size_t) level == assumptions.size () && constraint.size ())) {
       // Forced backtrack below pseudo decision levels.
       // So one of the two branches above will handle it.
-      STOP (decide);
-      res = decide (); // STARTS and STOPS profiling
-      START (decide);
-    } else {
-      stats.decisions++;
-      if (!decision) {
-        int idx = next_decision_variable ();
-        const bool target = (opts.target > 1 || (stable && opts.target));
-        decision = decide_phase (idx, target);
-      }
-      search_assume_decision (decision);
+      return decide ();
     }
+    stats.decisions++;
+    if (!decision) {
+      int idx = next_decision_variable ();
+      const bool target = (opts.target > 1 || (stable && opts.target));
+      decision = decide_phase (idx, target);
+    }
+    assert (!flags (decision).unused ());
+    search_assume_decision (decision);
   }
   if (res)
     marked_failed = false;
-  STOP (decide);
+  check_var_stats ();
   return res;
 }
 } // namespace CaDiCaL

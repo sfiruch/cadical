@@ -23,7 +23,7 @@ void Internal::collect_instantiation_candidates (
       continue; // BVE attempt pending
     for (int sign = -1; sign <= 1; sign += 2) {
       const int lit = sign * idx;
-      if (noccs (lit) > opts.instantiateocclim)
+      if (noccs (lit) > (unsigned) opts.instantiateocclim)
         continue;
       Occs &os = occs (lit);
       for (const auto &c : os) {
@@ -76,7 +76,7 @@ inline void Internal::inst_assign (int lit) {
 // attempt succeeds.
 //
 bool Internal::inst_propagate () { // Adapted from 'propagate'.
-  START (propagate);
+  PROFILE_SCOPE (propagate);
   int64_t before = propagated;
   bool ok = true;
   while (ok && propagated != trail.size ()) {
@@ -163,8 +163,8 @@ bool Internal::inst_propagate () { // Adapted from 'propagate'.
     }
   }
   int64_t delta = propagated - before;
-  stats.propagations.instantiate += delta;
-  STOP (propagate);
+  stats.propagations_inst += delta;
+  stats.propagations += delta;
   return ok;
 }
 
@@ -173,7 +173,7 @@ bool Internal::inst_propagate () { // Adapted from 'propagate'.
 // This is the instantiation attempt.
 
 bool Internal::instantiate_candidate (int lit, Clause *c) {
-  stats.instried++;
+  stats.instantiate_tried++;
   if (c->garbage)
     return false;
   assert (!level);
@@ -311,8 +311,8 @@ bool Internal::instantiate_candidate (int lit, Clause *c) {
 
 void Internal::instantiate (Instantiator &instantiator) {
   assert (opts.instantiate);
-  START (instantiate);
-  stats.instrounds++;
+  PROFILE_SCOPE (instantiate);
+  stats.instantiations++;
 #ifndef QUIET
   const int64_t candidates = instantiator.candidates.size ();
   int64_t tried = 0;
@@ -327,7 +327,7 @@ void Internal::instantiate (Instantiator &instantiator) {
       assert (unsat);
     }
   }
-  PHASE ("instantiate", stats.instrounds,
+  PHASE ("instantiate", stats.instantiations,
          "attempting to instantiate %" PRId64
          " candidate literal clause pairs",
          candidates);
@@ -353,13 +353,12 @@ void Internal::instantiate (Instantiator &instantiator) {
              tried, percent (tried, candidates),
              percent (instantiated, tried), cand.negoccs, cand.size);
   }
-  PHASE ("instantiate", stats.instrounds,
+  PHASE ("instantiate", stats.instantiations,
          "instantiated %" PRId64 " candidate successfully "
          "out of %" PRId64 " tried %.1f%%",
          instantiated, tried, percent (instantiated, tried));
   report ('I', !instantiated);
   reset_watches ();
-  STOP (instantiate);
 }
 
 } // namespace CaDiCaL

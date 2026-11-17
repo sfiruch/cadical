@@ -69,11 +69,9 @@ cmd () {
 }
 
 run () {
-  if test x"$1" = xparcompwrite -a x`uname -o` = xDarwin
+  if [ x"$1" = x ]
   then
-    msg "skipping API test ${HILITE}'$1'${NORMAL} on 'Darwin'"
-    skipped=`expr $skipped + 1`
-    return
+    die "no argument given"
   fi
   msg "running API test ${HILITE}'$1'${NORMAL}"
   if [ -f $tests/$1.c ]
@@ -86,9 +84,9 @@ run () {
     src=$tests/$1.cpp
     language=""
     COMPILE="$CXX $CXXFLAGS"
-    [ x"$1" = xparcompwrite ] && COMPILE="$COMPILE -pthread"
+    [ x"$1" = xterminator ] && COMPILE="$COMPILE -pthread"
   else
-    die "can not find '$tests.c' nor '$tests.cpp'"
+    die "can not find '$tests/$1.c' nor '$tests/$1.cpp'"
   fi
   name=$CADICALBUILD/test-api-$1
   rm -f $name.log $name.o $name
@@ -108,6 +106,7 @@ run () {
 
 #--------------------------------------------------------------------------#
 
+run copy
 run newdelete
 run unit
 run morenmore
@@ -117,14 +116,15 @@ run example_declare_one_more_variable
 run example_constraint
 run example_tracer
 run terminate
+run terminator
 run learn
 run cfreeze
 run traverse
 run cipasir
+run cipasir2
 run incproof
 run propagate_assumptions
 run example_propagators
-run parcompwrite
 
 if [ "`grep DNTRACING $makefile`" = "" ]
 then

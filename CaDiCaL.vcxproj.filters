@@ -18,6 +18,24 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\citten.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\citterr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ddfw.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\extprop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\exttoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ipasir2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\analyze.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -240,9 +258,6 @@
     <ClCompile Include="src\drattracer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\external_propagate.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\flip.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -250,9 +265,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\idruptracer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\kitten.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\lratchecker.cpp">
@@ -294,9 +306,6 @@
     <ClCompile Include="src\unstable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\walk_full_occs.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\warmup.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -306,6 +315,27 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\ipasir.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\citten.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\exttoint.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\hash.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\hashmap.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ipasir2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mstats.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\statistics.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\arena.hpp">
@@ -375,9 +405,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\message.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\observer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\occs.hpp">
@@ -477,9 +504,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\inttypes.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\kitten.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\random.h">
